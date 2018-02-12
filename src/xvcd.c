@@ -3,13 +3,21 @@
 #include <unistd.h>
 #include <string.h>
 #include <time.h>
-
+  
 #include <sys/types.h>
 #include <sys/socket.h>
 #include <netinet/tcp.h>
 #include <netinet/in.h>
+#include <ifaddrs.h>
 
 #include "io_ftdi.h"
+
+// Define USE_GETIFADDRS to be the interface that the server will
+// attach to in order to use getifaddrs() to determine IP address of
+// the server for output to user. Not all platforms support this
+// function, so simply undef USE_GETIFADDRS if your platform cannot
+// find this function.
+#define USE_GETIFADDRS "wlan0"
 
 #define STRINGIFY(x) #x
 #define TOSTRING(x) STRINGIFY(x)
@@ -84,7 +92,68 @@ void putInt32(unsigned char *data, int32_t num) {
 
 }
 
-static int sread(int fd, void *target, int len) {
+#ifdef USE_GETIFADDRS
+// From: https://stackoverflow.com/questions/15914790/how-to-get-its-own-ip-address-with-a-socket-address#15915593
+//
+long int getInternalAddress(char* interface, sa_family_t ipVersion)
+{
+    struct ifaddrs *ifaddrHead, *ifaddr;
+    /* int_8 */
+    sa_family_t family;
+    int n;
+    char *interfaceName;
+
+    if (getifaddrs(&ifaddrHead) != 0)
+    {
+	fprintf(stderr, "ifaddrs error");
+    }
+
+    /* iterate through address list */
+    for (ifaddr = ifaddrHead, n = 0; ifaddr != NULL; ifaddr = ifaddr->ifa_next, n++)
+    {
+	family = ifaddr->ifa_addr->sa_family;
+	interfaceName = ifaddr->ifa_name;
+
+	if (!family || family != ipVersion || strcmp(interfaceName, interface)) continue;
+
+	struct sockaddr *addr = ifaddr->ifa_addr;
+	struct sockaddr_in* addr_in = (struct sockaddr_in*) addr;
+	long int address = addr_in->sin_addr.s_addr;
+
+	freeifaddrs(ifaddrHead);
+
+	return address;
+    }
+
+    freeifaddrs(ifaddrHead);
+
+    return 0;
+}
+#endif
+
+char *getHostIP(void)
+{
+    static char *hostMsg = "IP_Address";
+    char *host = hostMsg;
+
+#ifdef USE_GETIFADDRS
+    static char hostIPstr[4*4];	/* big enough to hold address string */
+    long int address = getInternalAddress((char*) &USE_GETIFADDRS, AF_INET);
+
+    snprintf(hostIPstr, 4*4, "%u.%u.%u.%u",
+	     (unsigned int) (address>> 0)&0x0ff,
+	     (unsigned int) (address>> 8)&0x0ff,
+	     (unsigned int) (address>>16)&0x0ff,
+	     (unsigned int) (address>>24)&0x0ff);
+    host = hostIPstr;
+    //printf("IP Address: %s\n", host);
+#endif
+    
+    return host;
+}
+
+static int sread(int fd, void *target, int len)
+{
     unsigned char *t = target;
     while (len) {
         int r = read(fd, t, len);
@@ -293,12 +362,14 @@ int main(int argc, char **argv)
 
     if (vlevel > 0) {
 	// Print a helpful message indicating how to use the XVCD server.
+	char *host = getHostIP();
+	
 	printf("\nStarting XVCD server. In the relevant tool, use the following cable plugin command:\n\n");
 	printf("If ISE iMPACT, Open Cable Plug-in with:\n");
-	printf("    xilinx_xvc host=%s:%d disableversioncheck=true\n\n", "192.172.x.x", port);
+	printf("    xilinx_xvc host=%s:%d disableversioncheck=true\n\n", host, port);
 	printf("If Vivado, in the Tcl Console of the Hardware Manager:\n");
 	printf( "    connect_hw_server\n");
-	printf("    open_hw_target -xvc_url %s:%d\n\n", "192.172.x.x", port);
+	printf("    open_hw_target -xvc_url %s:%d\n\n", host, port);
 	printf("You should be able to use the relevant tool normally.\n\n");
     }
     
