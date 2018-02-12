@@ -12,7 +12,7 @@ $(O):
 $(OBJ):
 	mkdir -p $(OBJ)
 
-$(O)/xvcd: $(OBJ)/io_ftdi.o $(OBJ)/xvcd.o
+$(O)/xvcd: $(OBJ)/io_ftdi_mpsse.o $(OBJ)/xvcd.o
 	$(CC) -o $@ $^ $(CFLAGS)
 
 $(OBJ)/%.o: %.c $(OBJ) io_ftdi.h

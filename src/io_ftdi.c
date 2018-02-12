@@ -56,19 +56,19 @@ int io_init(int product, int vendor)
     ftdi_set_bitmode(&ftdi, 0xFF, BITMODE_CBUS);
     res = ftdi_set_bitmode(&ftdi, IO_OUTPUT, BITMODE_SYNCBB);
 
+    if (res < 0) 
+    {
+        fprintf(stderr, "ftdi_set_bitmode: %d (%s)\n", res, ftdi_get_error_string(&ftdi));
+        io_close();
+        return 1;
+    }
+        
     // Update state of outputs to the default
     buf[0] = IO_DEFAULT_OUT;
     res = ftdi_write_data(&ftdi, buf, 1);
     if (res < 0) 
     {
         fprintf(stderr, "write failed for 0x%x, error %d (%s)\n",buf[0], res, ftdi_get_error_string(&ftdi));
-    }
-        
-    if (res < 0) 
-    {
-        fprintf(stderr, "ftdi_set_bitmode: %d (%s)\n", res, ftdi_get_error_string(&ftdi));
-        io_close();
-        return 1;
     }
         
     res = ftdi_usb_purge_buffers(&ftdi);
@@ -80,7 +80,8 @@ int io_init(int product, int vendor)
         return 1;
     }
         
-    res = ftdi_set_baudrate(&ftdi, 750000); /* Automatically Multiplied by 4 */
+    //@@@res = ftdi_set_baudrate(&ftdi, 750000); /* Automatically Multiplied by 4 */
+    res = ftdi_set_baudrate(&ftdi, 50000); /* Measured to be a 2MHz TCK frequency */
         
     if (res < 0)
     {
