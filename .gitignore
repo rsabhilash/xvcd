@@ -1,1 +1,6 @@
 bin
+src/io_ftdi_ORIG.c
+src/obj/
+src/xvcd
+src/xvcd_ORIG.c
+
