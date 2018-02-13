@@ -264,8 +264,12 @@ int handle_data(int fd /* @@@ , volatile jtag_t* ptr */)
 
 	    if (vlevel > 3) {
 		int i;		
-		printf("#");
-		for (i = 0; i < nr_bytes * 2; ++i)
+		printf("TMS#");
+		for (i = 0; i < nr_bytes; ++i)
+		    printf("%02x ", buffer[i]);
+		printf("\n");
+		printf("TDI#");
+		for (; i < nr_bytes * 2; ++i)
 		    printf("%02x ", buffer[i]);
 		printf("\n");
 	    }
@@ -309,6 +313,15 @@ int handle_data(int fd /* @@@ , volatile jtag_t* ptr */)
                 fprintf(stderr, "io_scan failed\n");
                 exit(1);
             }
+
+	    if (vlevel > 3) {
+		int i;		
+		printf("TDO#");
+		for (i = 0; i < nr_bytes; ++i)
+		    printf("%02x ", result[i]);
+		printf("\n");
+	    }
+	    
         }
 
         if (write(fd, result, nr_bytes) != nr_bytes) {

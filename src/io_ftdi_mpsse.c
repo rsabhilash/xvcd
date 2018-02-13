@@ -150,6 +150,7 @@ int io_transfer_mpsse(unsigned char *cmdp, int cmdBytes, int rxBytes, unsigned c
 	return -1;
     }
 
+    len = 0;
     bits = 0;
     bi = 0;
     rxp = rxbuf;
@@ -207,6 +208,12 @@ int io_transfer_mpsse(unsigned char *cmdp, int cmdBytes, int rxBytes, unsigned c
 	}
     }
 
+    if (bi != 0) {
+	// Before leave, make sure all partial bits in bits have been sent to TDO. 
+	**TDOpp = bits & 0x00ff;
+	(*TDOpp)++;
+    }
+    
     // Check that did not process more bytes than should have so can catch the bug.
     if ((rxp - rxbuf) > rxBytes) {
 	fprintf(stderr, "io_transfer_mpsse(): Processed TOO MANY bytes!\n");
@@ -227,10 +234,13 @@ int io_transfer_mpsse(unsigned char *cmdp, int cmdBytes, int rxBytes, unsigned c
 //
 void io_build_cmd_bits(const unsigned char *TMSp, const unsigned char *TDIp, int bits, unsigned char *cmdp, int *cmdszp, int *rxszp)
 {
+
+    // Initialize return values
+    *cmdszp = 0;
+    *rxszp = 0;
+    
     if (bits > 8 || bits < 1) {
 	fprintf(stderr, "io_build_cmd_bits(): requested invalid bits number: %d\n", bits);
-	*cmdszp = 0;
-	*rxszp = 0;
     } else {
     
 	// Seperate bit streams where TMS is '1' and where it is
@@ -484,7 +494,7 @@ int io_init(int product, int vendor, int verbosity)
         return 1;
     }
 
-    res = io_set_freq(2000000);
+    res = io_set_freq(1000000);
     if (res < 0)
     {
         fprintf(stderr, "io_set_frequency %d\n", res);
@@ -612,7 +622,9 @@ int io_scan(const unsigned char *TMS, const unsigned char *TDI, unsigned char *T
 	int cmdsz, rxsz;
 	// @@@ At first, send to FTDI using bit mode for every byte
 	nextBits = (bits > 8) ? 8 : bits;
+	if (vlevel > 4) printf("1: bits = %d\n", bits);
 	io_build_cmd_bits(TMS, TDI, nextBits, cmdp, &cmdsz, &rxsz);
+	if (vlevel > 4) printf("2: nextBits = %d, cmdsz = %d, rxsz = %d\n", nextBits, cmdsz, rxsz);
 	TMS++;
 	TDI++;
 	
@@ -642,6 +654,7 @@ int io_scan(const unsigned char *TMS, const unsigned char *TDI, unsigned char *T
 	cmdBytes += cmdsz;
 	rxBytes += rxsz;
 	bits -= nextBits;
+	if (vlevel > 4) printf("3: cmdBytes = %d, rxBytes = %d, bits = %d\n", cmdBytes, rxBytes, bits);
     }
 
     if (cmdBytes > 0) {
