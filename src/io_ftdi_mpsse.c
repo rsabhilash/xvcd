@@ -6,6 +6,27 @@
 
 // NOTE: Merged in changes from https://github.com/ObKo/xvcd to support libftdi1
 
+#define BUILD_FOR_H_SERIES (-1)
+#define USE_ASYNC
+#undef  USE_LIBFTDI1
+
+///////////////////////////////////////////////
+
+// Each read also returns 2 status bytes which are not returned to
+// us. Not sure if this really counts against CHUNK SIZE but
+// subtracting 2 for FTDI_READ_CHUNK_SIZE just in case.
+#define FTDI_WRITE_CHUNK_SIZE  (256)
+#define FTDI_READ_CHUNK_SIZE  (256-2)
+
+#ifndef USE_ASYNC
+#define FTDI_MAX_WRITESIZE 256
+#endif
+
+/* create a right shifted bit mask for number of bits */
+#define BITMASK(bits)  (0xff >> (8-bits))
+
+///////////////////////////////////////////////
+
 #define PORT_TCK            0x01
 #define PORT_TDI            0x02
 #define PORT_TDO            0x04
@@ -14,13 +35,6 @@
 #define IO_OUTPUT (PORT_MISC|PORT_TCK|PORT_TDI|PORT_TMS)
 
 #define IO_DEFAULT_OUT     (0xe0)               /* Found to work best for some FTDI implementations */
-
-#define USE_ASYNC
-#undef  USE_LIBFTDI1
-
-#ifndef USE_ASYNC
-#define FTDI_MAX_WRITESIZE 256
-#endif
 
 // MPSSE Command Bytes (taken from pyftdi)
 #define WRITE_BYTES_PVE_MSB  (0x10)
@@ -58,7 +72,9 @@
 #define RW_BITS_TMS_NVE_PVE  (0x6e)
 #define RW_BITS_TMS_NVE_NVE  (0x6f)
 
-struct ftdi_context ftdi;
+static struct ftdi_context ftdi;
+static int vlevel = 0;
+
 
 void io_close(void);
 
@@ -86,14 +102,187 @@ int io_read_data (unsigned char *buffer, unsigned int len)
 	timeout--;
     }
 
-    if (timeout <= 0) {
-	fprintf(stderr, "ftdi_read_data Timeout!\n");
+    if (vlevel > 3 && timeout <= 0) {
+	fprintf(stderr, "ftdi_read_data Timeout! (may be okay)\n");
     }
     
     return i;
 }
 
-#define BUILD_FOR_H_SERIES (-1)
+
+// Send MPSSE Commands, receive data and decode into TDO bits
+//
+// cmdp - pointer to the command byte array to send
+// cmdBytes - number of bytes to send
+// TDOp - pointer to byte where TDO bits are to be returned
+// rxBytes - number of bytes expected to receive
+//
+// return: actual number of bytes received or a negative number if error
+//
+int io_transfer_mpsse(unsigned char *cmdp, int cmdBytes, unsigned char *TDOp, int rxBytes)
+{
+    static unsigned char rxbuf[FTDI_READ_CHUNK_SIZE+30];
+    unsigned char *rxp;
+    unsigned int len;
+    unsigned int bits;
+    unsigned int bi;		/* bit index */
+    int res;
+    
+    // Make sure do not blow the READ CHUNK SIZE - should be sized to
+    // avoid this but notify in case that is not the case.
+    if (rxBytes > FTDI_READ_CHUNK_SIZE) {
+	fprintf(stderr, "io_transfer_mpsse(): Number of read bytes (%d) exceeds read chunk size (%d)! Aborting transfer!\n", rxBytes, FTDI_READ_CHUNK_SIZE);
+	return -1;
+    }
+
+    // Send MPSSE commands
+    res = ftdi_write_data(&ftdi, cmdp, cmdBytes);
+    if (res != cmdBytes) {
+	fprintf(stderr, "io_transfer_mpsse(): ftdi_write_data %d (%s)\n", res, ftdi_get_error_string(&ftdi));
+	return -1;
+    }
+
+    // Read back the expected receive bytes
+    res = io_read_data(&ftdi, rxbuf, rxBytes);
+    if (res != rxBytes) {
+	fprintf(stderr, "io_transfer_mpsse(): ftdi_read_data %d (%s)\n", res, ftdi_get_error_string(&ftdi));
+	return -1;
+    }
+
+    bits = 0;
+    bi = 0;
+    rxp = rxbuf;
+    while ((rxp - rxbuf) < rxBytes) {
+	// Process TDO bits. Since some of the commands are partial bit
+	// transfers, must do some bit shifting and splicing to form the
+	// TDO bit stream. Use the command buffer to know how to handle
+	// the received data.
+	//
+    
+	// First double check that all commands are lsb so we can just
+	// assume to process as lsb. If find a MSB command, tell the
+	// user/programmer to fix the code. Bit 3 is a '1' for lsb and a
+	// '0' for msb.
+	if ((*cmdp & 0x08) == 0) {
+	    fprintf(stderr, "io_transfer_mpsse(): MSB command used. Will process incorrectly as if LSB! Fix your code!\n");
+	}
+    
+	// Next check if bit transfer or byte transfer. Bit 1 of the
+	// command opcode is a '1' if a bit command and a '0' if a byte
+	// command.
+	if (*cmdp++ & 0x02) {
+	    // handle the bit command
+	    // - next command byte is the (bit length - 1)
+	    // - followed by data byte shifted down from bit 7
+	    len = (unsigned int) ((*cmdp++) + 1);
+	    cmdp++;		/* advance to next command */
+	    bits |= ((unsigned int)(*rxp++) >> (8-len)) << bi;
+	    if ((bi + len) >= 8) {
+		// If collected 8 bits, copy the bit-aligned byte to
+		// TDO and shift down the bits holder and the bit index
+		*TDOp++ = bits & 0x00ff;
+		bits >>= 8;
+		bi = (bi + len) - 8;
+	    } else {
+		// Have not filled up an entire byte, so simply increase bit index
+		bi += len;
+	    }
+	} else {
+	    fprintf(stderr, "io_transfer_mpsse(): Found a byte command!\n");
+	    if (bi != 0) {
+		// bi should always be 0 when reach a byte command. If error - issue an error, but continue, so can debug.
+		fprintf(stderr, "io_transfer_mpsse(): bitindex error - has value of %d but should be 0 here!\n", bi);
+	    }
+	    // handle the byte command
+	    // - next two command bytes are the (byte length - 1) with LSB first
+	    // - followed by the data bytes
+	    len = (unsigned int) (*cmdp++);
+	    len |= ((unsigned int) (*cmdp++)) << 8;
+	    len += 1;
+	    cmdp += len;		/* advance to next command */
+	    TDOp = memcpy(TDOp,rxp,len);
+	    rxp += len;
+	}
+    }
+
+    // Check that did not process more bytes than should have so can catch the bug.
+    if ((rxp - rxbuf) > rxBytes) {
+	fprintf(stderr, "io_transfer_mpsse(): Processed TOO MANY bytes!\n");
+    }
+
+    // return number of bytes received and processed
+    return (rxp - rxbuf);
+}
+
+// Build the FTDI MPSSE command for sending the TMS and TDI bits using MPSSE bit commands.
+//
+// TMSp - pointer to byte where bits are to be pulled, lsb first
+// TDIp - pointer to byte where bits are to be pulled, lsb first
+// bits - number of bits to send (1 .. 8)
+// cmdp - pointer to cmd buffer to write command bytes
+// cmdszp - the number of bytes added to cmdp will be returned here
+// rxszp - the number of bytes to expect in the read bytes from these added commands will be returned here
+//
+void io_build_cmd_bits(const unsigned char *TMSp, const unsigned char *TDIp, int bits, unsigned char *cmdp, int *cmdszp, int *rxszp)
+{
+    if (bits > 8 || bits < 1) {
+	fprintf(stderr, "io_build_cmd_bits(): requested invalid bits number: %d\n", bits);
+	*cmdszp = 0;
+	*rxszp = 0;
+    } else {
+    
+	// Seperate bit streams where TMS is '1' and where it is
+	// '0'. Where TMS is '1', TDI must be the same value for the
+	// MPSSE command due to how badly constructed the MPSSE
+	// commands are (why is it this way?)
+	unsigned char TMS = *TMSp;
+	unsigned char TDI = *TDIp;
+	int i;			/* will be used to search for number of bits in bit stream for next MPSSE command */
+	    
+	while (bits > 0) {
+	    i = 1;		/* reset i to 1 at the start of each loop */
+	    if (TMS & 0x01) {
+		// lsb of TMS is '1', so send a TMS command.
+		//
+		// search through TMS bits looking for how long the section of '1's is.
+		// TDI must be the same value during this section or else stop looking.
+		// TMS command can only send 7 bits, so stop search if i == 7
+		while (((bits-i) > 0) && (i < 7) && ((TMS & BITMASK(i+1)) == BITMASK(i+1)) &&
+		       ((TDI & BITMASK(i+1)) == 0 || (TDI & BITMASK(i+1)) == BITMASK(i+1))) {
+		    i++;			    
+		}
+		// TMS is all 1's, so send TMS command with a single TDI that remains in this stat during TMS's
+		*cmdp++ = RW_BITS_TMS_PVE_NVE; /* write TDI/TMS on falling TCK, read TDO on rising TCK */
+		*cmdp++ = i - 1;	/* 1 bits -> 0, 7 bits -> 6 */
+		*cmdp++ = ((TDI & 0x01) << 7) | (TMS & BITMASK(i));
+		*cmdszp += 3;
+		*rxszp += 1;		/* expect 1 byte to be read in response to this command */
+	    } else {
+		// lsb of TMS is '0', so send a TDI command for bit stream where TMS is '0'
+		//
+		// although bits should not be > 8, stop search if i == 8
+		while (((bits-i) > 0) && (i < 8) && !(TMS & BITMASK(i+1))) {
+		    i++;			    
+		}
+		// Section of TMS is all 0's, so send TDI bits
+		*cmdp++ = RW_BITS_PVE_NVE_LSB; /* write TDI/TMS on falling TCK, read TDO on rising TCK */
+		*cmdp++ = i - 1;	/* 1 bits -> 0, 8 bits -> 7 */
+		*cmdp++ = TDI & BITMASK(i);
+		*cmdszp += 3;
+		*rxszp += 1;		/* expect 1 byte to be read in response to this command */
+	    }
+
+	    // advance cmd, res, bits, TMS & TDI
+	    bits -= i;
+	    TMS >>= i;
+	    TDI >>= i;		
+	}
+
+    }
+
+}
+
+
 int io_set_freq(unsigned int frequency)
 {
     const unsigned int BUS_CLOCK_BASE = 6000000;
@@ -137,18 +326,23 @@ int io_set_freq(unsigned int frequency)
         return -254;
     }
 
-#if 0    
-    printf("Reading back response\n");
+    // Check for any error return by FTDI for any of the above
+    // commands. The expected response is that io_read_data() will
+    // timeout and return res = 0. However, if something is returned,
+    // check to see if it is an error. (NOTE: not totally sure if
+    // ftdi_read_data() will return status in case of error. It does
+    // strip out the modem status bytes).
+    if (vlevel > 1) {
+	printf("Reading back response\n");
+    }
     res = io_read_data (buf, 2);
-    printf("FTDI Response: 0x%02x 0x%02x\n",buf[0], buf[1]);
-    if (res < 0) {
-        fprintf(stderr, "read failed, error %d (%s)\n", res, ftdi_get_error_string(&ftdi));
-	return res;
-    } else if (buf[0] == 0xfa) {
+    if (vlevel > 1 && res >= 2) {
+	printf("FTDI Response: 0x%02x 0x%02x\n",buf[0], buf[1]);
+    }
+    if (res >= 2 && buf[0] == 0xfa) {
         fprintf(stderr, "Invalid FTDI MPSSE command at %d\n",buf[1]);
 	return -253;
     }
-#endif
     
     res = ftdi_usb_purge_rx_buffer(&ftdi);
     if (res < 0)
@@ -160,7 +354,7 @@ int io_set_freq(unsigned int frequency)
     return (int) actual_freq;
 }
 
-int io_init(int product, int vendor)
+int io_init(int product, int vendor, int verbosity=0)
 {
     int res, len;
     unsigned char buf[16];
@@ -169,7 +363,10 @@ int io_init(int product, int vendor)
         product = 0x6010;
     if (vendor < 0)
         vendor = 0x0403;
-        
+
+    // Save verbosity level
+    vlevel = verbosity;
+    
     res = ftdi_init(&ftdi);
         
     if (res < 0)
@@ -205,7 +402,7 @@ int io_init(int product, int vendor)
     }
 
     // @@@ Not sure if this is needed
-    res = ftdi_write_data_set_chunksize(&ftdi, 256); // Saw 65535 used
+    res = ftdi_write_data_set_chunksize(&ftdi, FTDI_WRITE_CHUNK_SIZE 256); // Saw 65535 used
     if (res) {
 	fprintf(stderr, "Unable to set write chunk size: %d (%s).\n", res, ftdi_get_error_string(&ftdi));
         io_close();
@@ -213,7 +410,7 @@ int io_init(int product, int vendor)
     }
     
     // @@@ Not sure if this is needed
-    res = ftdi_read_data_set_chunksize(&ftdi, 256); // Saw 65535 used
+    res = ftdi_read_data_set_chunksize(&ftdi, FTDI_READ_CHUNK_SIZE  256); // Saw 65535 used
     if (res) {
 	fprintf(stderr, "Unable to set read chunk size: %d (%s).\n", res, ftdi_get_error_string(&ftdi));
         io_close();
@@ -318,17 +515,6 @@ int io_init(int product, int vendor)
         io_close();
         return 1;
     }
-
-#if 0    
-    printf("Reading back response\n");
-    res = io_read_data (buf, 2);
-    printf("FTDI Response: 0x%02x 0x%02x\n",buf[0], buf[1]);
-    if (res < 0) {
-        fprintf(stderr, "read failed, error %d (%s)\n", res, ftdi_get_error_string(&ftdi));
-    } else if (buf[0] == 0xfa) {
-        fprintf(stderr, "Invalid FTDI MPSSE command at %d\n",buf[1]);
-    }
-#endif
     
     // Disable loopback mode
     buf[0] = LOOPBACK_END;
@@ -341,27 +527,40 @@ int io_init(int product, int vendor)
         return 1;
     }
 
-#if 0    
-    printf("Reading back response\n");
-    res = io_read_data (buf, 2);
-    printf("FTDI Response: 0x%02x 0x%02x\n",buf[0], buf[1]);
-    if (res < 0) {
-        fprintf(stderr, "read failed, error %d (%s)\n", res, ftdi_get_error_string(&ftdi));
-    } else if (buf[0] == 0xfa) {
-        fprintf(stderr, "Invalid FTDI MPSSE command at %d\n",buf[1]);
+    // Check for any error return by FTDI for any of the above
+    // commands. The expected response is that io_read_data() will
+    // timeout and return res = 0. However, if something is returned,
+    // check to see if it is an error. (NOTE: not totally sure if
+    // ftdi_read_data() will return status in case of error. It does
+    // strip out the modem status bytes).
+    if (vlevel > 1) {
+	printf("Reading back response\n");
     }
-#endif    
-
+    res = io_read_data (buf, 2);
+    if (vlevel > 1 && res >= 2) {
+	printf("FTDI Response: 0x%02x 0x%02x\n",buf[0], buf[1]);
+    }
+    if (res >= 2 && buf[0] == 0xfa) {
+        fprintf(stderr, "Invalid FTDI MPSSE command at %d\n",buf[1]);
+	return -253;
+    }
+    
     printf("FTDI ready with MPSSE mode\n");
 
     return 0;
 }
 
+
 int io_scan(const unsigned char *TMS, const unsigned char *TDI, unsigned char *TDO, int bits)
 {
-    unsigned char buffer[2*16384];
+    static unsigned char cmdbuf[2*FTDI_WRITE_CHUNK_SIZE];
+    unsigned char *TDOstart = TDO;
+    int numTDOBytes = (bits+7) / 8;     // Number of TDO bytes to be received
+
     //@@@int i, res; 
-    int res, len; 
+    int res, len;
+    int cmdBytes = 0, rxBytes = 0;
+    
 #ifndef USE_ASYNC
 #error no async
     int r, t;
@@ -374,7 +573,11 @@ int io_scan(const unsigned char *TMS, const unsigned char *TDI, unsigned char *T
 #endif
 
     printf("io_scan() of %d bits\n", bits);
+
+    // Clear out TDO bits to make it easier to assemble (likely NOT necessary)
+    //@@@memset(TDO, 0, (bits + 7) / 8);
     
+#if 0    
     // Send a test of 6 bits with TMS high and 1 last bit with TMS low
     // while TDI remains low the entire time.
     buffer[0] = RW_BITS_TMS_PVE_NVE;
@@ -395,6 +598,58 @@ int io_scan(const unsigned char *TMS, const unsigned char *TDI, unsigned char *T
         fprintf(stderr, "read failed, error %d (%s)\n", res, ftdi_get_error_string(&ftdi));
     } else if (buffer[0] == 0xfa) {
         fprintf(stderr, "Invalid FTDI MPSSE command at %d\n",buffer[1]);
+    }
+#endif
+
+    cmdp = cmdbuf;
+    while (bits > 0) {
+	int cmdsz, rxsz;
+	// @@@ At first, send to FTDI using bit mode for every byte
+	nextBits = (bits > 8) ? 8 : bits;
+	io_build_cmd_bits(TMS, TDI, nextBits, cmdp, &cmdsz, &rxsz);
+	TMS++;
+	TDI++;
+	
+	if ((cmdBytes + cmdsz) > FTDI_WRITE_CHUNK_SIZE) {
+	    // cannot fit in the new commands without exceeding
+	    // FTDI_WRITE_CHUNK_SIZE, so send on cmdbuf and then
+	    // restart at beginning of buffer with the commands that
+	    // we just received.
+	    res = io_transfer_mpsse(cmdbuf, cmdBytes, rxBytes, &TDO);
+	    if (res != rxBytes) {
+		fprintf(stderr, "Error transferring data with FTDI: %d (%s)\n", res, ftdi_get_error_string(&ftdi));
+		return -1;
+	    }
+
+	    // Move commands from last io_cmd_build_xxx() call to
+	    // front of cmdbuf to continue sending/receiving data and
+	    // reset counters.
+	    //
+	    // Areas under some really odd cirsumstance could overlap
+	    // so use memmove(). This should not be happening often,
+	    // so can be a little non-optimized.
+	    cmdp = memmove(cmdbuf, cmdp, cmdBytes);
+	    cmdBytes = 0;
+	    rxBytes = 0;
+	}
+	cmdp += cmdsz;
+	cmdBytes += cmdsz;
+	rxBytes += rxsz;
+	bits -= nextBits;
+    }
+
+    if (cmdBytes > 0) {
+	// handle the remaining command bytes
+	res = io_transfer_mpsse(cmdbuf, cmdBytes, rxBytes, &TDO);
+	if (res != rxBytes) {
+	    fprintf(stderr, "Error transferring data with FTDI: %d (%s)\n", res, ftdi_get_error_string(&ftdi));
+	    return -1;
+	}
+    }
+
+    // check that did not over blow TDO array
+    if ((TDO - TDOstart) > numTDOBytes) {
+	fprintf(stderr, "io_scan(): wrote too many bytes into TDO! Exp.: %d  Act. %d\n", numTDOBytes, (TDO - TDOstart));
     }
     
 #if 0    

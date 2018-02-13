@@ -255,7 +255,7 @@ int handle_data(int fd /* @@@ , volatile jtag_t* ptr */)
             fprintf(stderr, "reading data failed\n");
             return 1;
         }
-                
+
         memset(result, 0, nr_bytes);
 
         if (vlevel > 2) {
@@ -373,7 +373,7 @@ int main(int argc, char **argv)
 	printf("You should be able to use the relevant tool normally.\n\n");
     }
     
-    if (io_init(product, vendor))
+    if (io_init(product, vendor, vlevel))
     {
         fprintf(stderr, "io_init failed\n");
         return 1;
