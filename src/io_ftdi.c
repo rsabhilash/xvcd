@@ -26,7 +26,7 @@ struct ftdi_context ftdi;
 
 void io_close(void);
 
-int io_init(int product, int vendor)
+int io_init(int product, int vendor, int verbosity)
 {
     int res;
     unsigned char buf[1];

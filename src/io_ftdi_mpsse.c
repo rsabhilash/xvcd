@@ -15,8 +15,8 @@
 // Each read also returns 2 status bytes which are not returned to
 // us. Not sure if this really counts against CHUNK SIZE but
 // subtracting 2 for FTDI_READ_CHUNK_SIZE just in case.
-#define FTDI_WRITE_CHUNK_SIZE  (256)
-#define FTDI_READ_CHUNK_SIZE  (256-2)
+#define FTDI_WRITE_CHUNK_SIZE  (256)   // Saw 65535 used
+#define FTDI_READ_CHUNK_SIZE  (256-2)  // Saw 65535 used
 
 #ifndef USE_ASYNC
 #define FTDI_MAX_WRITESIZE 256
@@ -114,12 +114,13 @@ int io_read_data (unsigned char *buffer, unsigned int len)
 //
 // cmdp - pointer to the command byte array to send
 // cmdBytes - number of bytes to send
-// TDOp - pointer to byte where TDO bits are to be returned
 // rxBytes - number of bytes expected to receive
+// TDOpp - pointer to pointer to byte where TDO bits are to be returned
+//          allows the TDO pointer to be updated after returning
 //
 // return: actual number of bytes received or a negative number if error
 //
-int io_transfer_mpsse(unsigned char *cmdp, int cmdBytes, unsigned char *TDOp, int rxBytes)
+int io_transfer_mpsse(unsigned char *cmdp, int cmdBytes, int rxBytes, unsigned char **TDOpp)
 {
     static unsigned char rxbuf[FTDI_READ_CHUNK_SIZE+30];
     unsigned char *rxp;
@@ -143,7 +144,7 @@ int io_transfer_mpsse(unsigned char *cmdp, int cmdBytes, unsigned char *TDOp, in
     }
 
     // Read back the expected receive bytes
-    res = io_read_data(&ftdi, rxbuf, rxBytes);
+    res = io_read_data(rxbuf, rxBytes);
     if (res != rxBytes) {
 	fprintf(stderr, "io_transfer_mpsse(): ftdi_read_data %d (%s)\n", res, ftdi_get_error_string(&ftdi));
 	return -1;
@@ -180,7 +181,8 @@ int io_transfer_mpsse(unsigned char *cmdp, int cmdBytes, unsigned char *TDOp, in
 	    if ((bi + len) >= 8) {
 		// If collected 8 bits, copy the bit-aligned byte to
 		// TDO and shift down the bits holder and the bit index
-		*TDOp++ = bits & 0x00ff;
+		**TDOpp = bits & 0x00ff;
+		(*TDOpp)++;
 		bits >>= 8;
 		bi = (bi + len) - 8;
 	    } else {
@@ -200,7 +202,7 @@ int io_transfer_mpsse(unsigned char *cmdp, int cmdBytes, unsigned char *TDOp, in
 	    len |= ((unsigned int) (*cmdp++)) << 8;
 	    len += 1;
 	    cmdp += len;		/* advance to next command */
-	    TDOp = memcpy(TDOp,rxp,len);
+	    *TDOpp = memcpy(*TDOpp,rxp,len);
 	    rxp += len;
 	}
     }
@@ -354,7 +356,7 @@ int io_set_freq(unsigned int frequency)
     return (int) actual_freq;
 }
 
-int io_init(int product, int vendor, int verbosity=0)
+int io_init(int product, int vendor, int verbosity)
 {
     int res, len;
     unsigned char buf[16];
@@ -402,7 +404,7 @@ int io_init(int product, int vendor, int verbosity=0)
     }
 
     // @@@ Not sure if this is needed
-    res = ftdi_write_data_set_chunksize(&ftdi, FTDI_WRITE_CHUNK_SIZE 256); // Saw 65535 used
+    res = ftdi_write_data_set_chunksize(&ftdi, FTDI_WRITE_CHUNK_SIZE);
     if (res) {
 	fprintf(stderr, "Unable to set write chunk size: %d (%s).\n", res, ftdi_get_error_string(&ftdi));
         io_close();
@@ -410,7 +412,7 @@ int io_init(int product, int vendor, int verbosity=0)
     }
     
     // @@@ Not sure if this is needed
-    res = ftdi_read_data_set_chunksize(&ftdi, FTDI_READ_CHUNK_SIZE  256); // Saw 65535 used
+    res = ftdi_read_data_set_chunksize(&ftdi, FTDI_READ_CHUNK_SIZE);
     if (res) {
 	fprintf(stderr, "Unable to set read chunk size: %d (%s).\n", res, ftdi_get_error_string(&ftdi));
         io_close();
@@ -554,12 +556,14 @@ int io_init(int product, int vendor, int verbosity=0)
 int io_scan(const unsigned char *TMS, const unsigned char *TDI, unsigned char *TDO, int bits)
 {
     static unsigned char cmdbuf[2*FTDI_WRITE_CHUNK_SIZE];
+    unsigned char *cmdp = cmdbuf;
     unsigned char *TDOstart = TDO;
     int numTDOBytes = (bits+7) / 8;     // Number of TDO bytes to be received
 
     //@@@int i, res; 
-    int res, len;
-    int cmdBytes = 0, rxBytes = 0;
+    //@@@int res, len;
+    int res;
+    int cmdBytes = 0, rxBytes = 0, nextBits=0;
     
 #ifndef USE_ASYNC
 #error no async
@@ -602,6 +606,8 @@ int io_scan(const unsigned char *TMS, const unsigned char *TDI, unsigned char *T
 #endif
 
     cmdp = cmdbuf;
+    cmdBytes = 0;
+    rxBytes = 0;
     while (bits > 0) {
 	int cmdsz, rxsz;
 	// @@@ At first, send to FTDI using bit mode for every byte
