@@ -209,13 +209,15 @@ int handle_data(int fd /* @@@ , volatile jtag_t* ptr */)
 	    int32_t period, actPeriod;
 	    period = getInt32((unsigned char*)cmd+5);
 
-	    /* TODO: Do something with this period value */
-	    /* For now, simply echo back the period value */
-	    actPeriod = period;
+	    actPeriod = io_set_period((unsigned int)period);
 
+	    if (actPeriod < 0) {
+		fprintf(stderr, "Error while setting the JTAG TCK period\n");
+		actPeriod = period; /* on error, simply echo back the period value so client while not try to change it*/
+	    }
+	    
 	    putInt32(result, actPeriod);
 	    
-            //@@@memcpy(result, cmd + 5, 4);
             if (write(fd, result, 4) != 4) {
                 perror("write");
                 return 1;

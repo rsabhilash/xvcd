@@ -15,15 +15,15 @@
 // Each read also returns 2 status bytes which are not returned to
 // us. Not sure if this really counts against CHUNK SIZE but
 // subtracting 2 for FTDI_READ_CHUNK_SIZE just in case.
-#define FTDI_WRITE_CHUNK_SIZE  (256)   // Saw 65535 used
-#define FTDI_READ_CHUNK_SIZE  (256-2)  // Saw 65535 used
+#define FTDI_WRITE_CHUNK_SIZE  (2048)   // Saw 65535 used
+#define FTDI_READ_CHUNK_SIZE  (2048-2)  // Saw 65535 used
 
 #ifndef USE_ASYNC
 #define FTDI_MAX_WRITESIZE 256
 #endif
 
 /* create a right shifted bit mask for number of bits */
-#define BITMASK(bits)  (0xff >> (8-bits))
+#define BITMASK(bits)  (0xff >> (8-(bits)))
 
 ///////////////////////////////////////////////
 
@@ -88,9 +88,7 @@ int io_read_data (unsigned char *buffer, unsigned int len)
         
     while ((i < len) && timeout > 0)
     {
-	//@@@printf("Calling ftdi_read_data()\n");
         res = ftdi_read_data(&ftdi, buffer + i, len - i);
-	//@@@printf("Return from ftdi_read_data(): %d\n", res);
 
         if (res < 0)
         {
@@ -173,6 +171,7 @@ int io_transfer_mpsse(unsigned char *cmdp, int cmdBytes, int rxBytes, unsigned c
 	// command opcode is a '1' if a bit command and a '0' if a byte
 	// command.
 	if (*cmdp++ & 0x02) {
+	    if (vlevel > 4) fprintf(stderr, "io_transfer_mpsse(): Found a bit command!\n");
 	    // handle the bit command
 	    // - next command byte is the (bit length - 1)
 	    // - followed by data byte shifted down from bit 7
@@ -191,7 +190,7 @@ int io_transfer_mpsse(unsigned char *cmdp, int cmdBytes, int rxBytes, unsigned c
 		bi += len;
 	    }
 	} else {
-	    fprintf(stderr, "io_transfer_mpsse(): Found a byte command!\n");
+	    if (vlevel > 4) fprintf(stderr, "io_transfer_mpsse(): Found a byte command!\n");
 	    if (bi != 0) {
 		// bi should always be 0 when reach a byte command. If error - issue an error, but continue, so can debug.
 		fprintf(stderr, "io_transfer_mpsse(): bitindex error - has value of %d but should be 0 here!\n", bi);
@@ -200,10 +199,11 @@ int io_transfer_mpsse(unsigned char *cmdp, int cmdBytes, int rxBytes, unsigned c
 	    // - next two command bytes are the (byte length - 1) with LSB first
 	    // - followed by the data bytes
 	    len = (unsigned int) (*cmdp++);
-	    len |= ((unsigned int) (*cmdp++)) << 8;
+	    len |= (((unsigned int) (*cmdp++)) << 8);
 	    len += 1;
 	    cmdp += len;		/* advance to next command */
-	    *TDOpp = memcpy(*TDOpp,rxp,len);
+	    memcpy(*TDOpp,rxp,len);
+	    (*TDOpp) += len;
 	    rxp += len;
 	}
     }
@@ -225,76 +225,146 @@ int io_transfer_mpsse(unsigned char *cmdp, int cmdBytes, int rxBytes, unsigned c
 
 // Build the FTDI MPSSE command for sending the TMS and TDI bits using MPSSE bit commands.
 //
-// TMSp - pointer to byte where bits are to be pulled, lsb first
-// TDIp - pointer to byte where bits are to be pulled, lsb first
-// bits - number of bits to send (1 .. 8)
+// TMSp - pointer to byte where TMS bits are to be pulled, lsb first
+// TDIp - pointer to byte where TDI bits are to be pulled, lsb first
+// bits - number of bits left in TMS and TDI buffers, but only up to 8 will be sent
 // cmdp - pointer to cmd buffer to write command bytes
 // cmdszp - the number of bytes added to cmdp will be returned here
 // rxszp - the number of bytes to expect in the read bytes from these added commands will be returned here
 //
-void io_build_cmd_bits(const unsigned char *TMSp, const unsigned char *TDIp, int bits, unsigned char *cmdp, int *cmdszp, int *rxszp)
+// return: number of bits from TMSp and TDIp processed
+//
+int io_build_cmd_bits(const unsigned char *TMSp, const unsigned char *TDIp, int bits, unsigned char *cmdp, int *cmdszp, int *rxszp)
 {
+    // Seperate bit streams where TMS is '1' and where it is
+    // '0'. Where TMS is '1', TDI must be the same value for the
+    // MPSSE command due to how badly constructed the MPSSE
+    // commands are (why is it this way?)
+    unsigned char TMS = *TMSp;
+    unsigned char TDI = *TDIp;
+
+    /* i will be used to search for number of bits in bit stream for next MPSSE command */
+    int i;
+    int bitsUsed = 0;
+
+    // Initialize return values
+    *cmdszp = 0;
+    *rxszp = 0;
+
+    // Make sure bits will not be more than 8
+    bits = (bits > 8) ? 8 : bits;
+    	
+    if (vlevel > 3) printf("11: bits: %d  TMS: 0x%02x  TDI: 0x%02x\n", bits, TMS, TDI); 		    
+	
+    while (bits > 0) {
+	i = 1;		/* reset i to 1 at the start of each loop */
+	if (TMS & 0x01) {
+	    // lsb of TMS is '1', so send a TMS command.
+	    //
+	    // Can send up to 7 clocks of TMS zbut TDI must be
+	    // static during these clocks, although its static
+	    // state can be set. So search through TDI bits
+	    // looking for where its value changes, up to 7 bits
+	    // of TMS total.
+	    //
+	    // TMS command can only send 7 bits, so stop search if i == 7
+	    while (((bits-i) > 0) && (i < 7) &&
+		   ((TDI & BITMASK(i+1)) == 0 || (TDI & BITMASK(i+1)) == BITMASK(i+1))) {
+		if (vlevel > 3) printf("15: i: %d   BITMASK(i+1): 0x%02x  TDI & BITMASK(i+1): 0x%02x\n", i, BITMASK(i+1), TDI & BITMASK(i+1)); 		    
+		i++;			    
+	    }
+	    // TMS is all 1's, so send TMS command with a single TDI that remains in this stat during TMS's
+	    *cmdp++ = RW_BITS_TMS_PVE_NVE; /* write TDI/TMS on falling TCK, read TDO on rising TCK */
+	    *cmdp++ = i - 1;	/* 1 bits -> 0, 7 bits -> 6 */
+	    *cmdp++ = ((TDI & 0x01) << 7) | (TMS & BITMASK(i));
+	    *cmdszp += 3;
+	    *rxszp += 1;		/* expect 1 byte to be read in response to this command */
+	    if (vlevel > 3) printf("12: cmd: 0x%02x%02x%02x cmdsz: %d rxsz: %d\n", *(cmdp-3), *(cmdp-2), *(cmdp-1), *cmdszp, *rxszp); 		    
+	} else {
+	    // lsb of TMS is '0', so send a TDI command for bit stream where TMS is '0'
+	    //
+	    // although bits should not be > 8, stop search if i == 8
+	    while (((bits-i) > 0) && (i < 8) && !(TMS & BITMASK(i+1))) {
+		i++;			    
+	    }
+	    // Section of TMS is all 0's, so send TDI bits
+	    *cmdp++ = RW_BITS_PVE_NVE_LSB; /* write TDI/TMS on falling TCK, read TDO on rising TCK */
+	    *cmdp++ = i - 1;	/* 1 bits -> 0, 8 bits -> 7 */
+	    *cmdp++ = TDI & BITMASK(i);
+	    *cmdszp += 3;
+	    *rxszp += 1;		/* expect 1 byte to be read in response to this command */
+	    if (vlevel > 3) printf("13: cmd: 0x%02x%02x%02x cmdsz: %d rxsz: %d\n", *(cmdp-3), *(cmdp-2), *(cmdp-1), *cmdszp, *rxszp); 		    
+	}
+
+	// advance bitsUsed, bits, TMS & TDI
+	bitsUsed += i;
+	bits -= i;
+	TMS >>= i;
+	TDI >>= i;		
+	if (vlevel > 3) printf("14: bits: %d  TMS: 0x%02x  TDI: 0x%02x\n", bits, TMS, TDI); 		    
+    }
+
+    return bitsUsed;
+}
+
+// Build the FTDI MPSSE command for sending the TDI bits using MPSSE byte commands.
+//
+// TMSp - pointer to byte where TMS bits are to be checked, lsb first
+// TDIp - pointer to byte where TDI bits are to be pulled, lsb first
+// bits - number of bits left in TMS and TDI buffers
+// cmdp - pointer to cmd buffer to write command bytes
+// cmdszp - the number of bytes added to cmdp will be returned here
+// rxszp - the number of bytes to expect in the read bytes from these added commands will be returned here
+//
+// return: number of bits from TMSp and TDIp processed
+//
+int io_build_cmd_bytes(const unsigned char *TMSp, const unsigned char *TDIp, int bits, unsigned char *cmdp, int *cmdszp, int *rxszp)
+{
+    int bytes = (bits >> 3);	/* number of *full* bytes left in TMS & TDI */
+    int i;			/* will be used to search for number of bits in bit stream for next MPSSE command */
 
     // Initialize return values
     *cmdszp = 0;
     *rxszp = 0;
     
-    if (bits > 8 || bits < 1) {
-	fprintf(stderr, "io_build_cmd_bits(): requested invalid bits number: %d\n", bits);
-    } else {
-    
-	// Seperate bit streams where TMS is '1' and where it is
-	// '0'. Where TMS is '1', TDI must be the same value for the
-	// MPSSE command due to how badly constructed the MPSSE
-	// commands are (why is it this way?)
-	unsigned char TMS = *TMSp;
-	unsigned char TDI = *TDIp;
-	int i;			/* will be used to search for number of bits in bit stream for next MPSSE command */
-	    
-	while (bits > 0) {
-	    i = 1;		/* reset i to 1 at the start of each loop */
-	    if (TMS & 0x01) {
-		// lsb of TMS is '1', so send a TMS command.
-		//
-		// search through TMS bits looking for how long the section of '1's is.
-		// TDI must be the same value during this section or else stop looking.
-		// TMS command can only send 7 bits, so stop search if i == 7
-		while (((bits-i) > 0) && (i < 7) && ((TMS & BITMASK(i+1)) == BITMASK(i+1)) &&
-		       ((TDI & BITMASK(i+1)) == 0 || (TDI & BITMASK(i+1)) == BITMASK(i+1))) {
-		    i++;			    
-		}
-		// TMS is all 1's, so send TMS command with a single TDI that remains in this stat during TMS's
-		*cmdp++ = RW_BITS_TMS_PVE_NVE; /* write TDI/TMS on falling TCK, read TDO on rising TCK */
-		*cmdp++ = i - 1;	/* 1 bits -> 0, 7 bits -> 6 */
-		*cmdp++ = ((TDI & 0x01) << 7) | (TMS & BITMASK(i));
-		*cmdszp += 3;
-		*rxszp += 1;		/* expect 1 byte to be read in response to this command */
-	    } else {
-		// lsb of TMS is '0', so send a TDI command for bit stream where TMS is '0'
-		//
-		// although bits should not be > 8, stop search if i == 8
-		while (((bits-i) > 0) && (i < 8) && !(TMS & BITMASK(i+1))) {
-		    i++;			    
-		}
-		// Section of TMS is all 0's, so send TDI bits
-		*cmdp++ = RW_BITS_PVE_NVE_LSB; /* write TDI/TMS on falling TCK, read TDO on rising TCK */
-		*cmdp++ = i - 1;	/* 1 bits -> 0, 8 bits -> 7 */
-		*cmdp++ = TDI & BITMASK(i);
-		*cmdszp += 3;
-		*rxszp += 1;		/* expect 1 byte to be read in response to this command */
-	    }
 
-	    // advance cmd, res, bits, TMS & TDI
-	    bits -= i;
-	    TMS >>= i;
-	    TDI >>= i;		
-	}
+    if (vlevel > 3) printf("111: bits: %d  TMS[0]: 0x%02x  TDI[0]: 0x%02x\n", bits, *TMSp, *TDIp); 		    
+	
 
+    // Search through TMS to find out how many bytes we can send
+    // before TMS is no longer all 0's. i will be the number of bytes
+    // of TDI that can be sent before TMS is non-0.
+    //
+    // Make sure do not build a command that cannot completely fit in
+    // the WRITE CHUNK SIZE.
+    i = 0; 
+    while ((i < bytes) && (i < (FTDI_WRITE_CHUNK_SIZE-3)) && !(*TMSp++)) {
+	i++;			    
     }
 
+    if (i > 0) {
+	// If found a section to send, build the command
+	bytes = i - 1;		           /* reuse bytes variable to be a holding register for filling in the length */
+	*cmdp++ = RW_BYTES_PVE_NVE_LSB;    /* write TDI on falling TCK, read TDO on rising TCK */
+	*cmdp++ = (bytes & 0x00ff);	   /* 1 bytes -> 0, 65536 bytes -> 0xffff LOW BYTE */
+	*cmdp++ = ((bytes >> 8) & 0x00ff); /* 1 bytes -> 0, 65536 bytes -> 0xffff HIGH BYTE */
+	memcpy(cmdp, TDIp, i);             /* copy i bytes into the command vector */
+	cmdp += i;
+	*cmdszp = 3+i;
+	*rxszp = i;		         /* expect i byte to be read in response to this command */
+	if (vlevel > 3) printf("113: cmd: 0x%02x%02x%02x%02x... cmdsz: %d rxsz: %d\n", *(cmdp-3-i), *(cmdp-2-i), *(cmdp-1-i), *(cmdp-i), *cmdszp, *rxszp); 		    
+    }
+
+    // return number of bits processed from TMSp and TDIp
+    return (i << 3);
 }
 
 
+// frequency - desired JTAG TCK frequency in Hz
+//
+// return: if error, return an error code < 0
+//         if success, return the actual frequency in Hz
+//
 int io_set_freq(unsigned int frequency)
 {
     const unsigned int BUS_CLOCK_BASE = 6000000;
@@ -306,8 +376,8 @@ int io_set_freq(unsigned int frequency)
     int cnt, res;
     
     if (frequency > max_freq) {
-	fprintf(stderr, "Unsupported frequency: %u Hz\n", frequency);
-	return -255;
+	fprintf(stderr, "Unsupported frequency: %u Hz. Capping to: %u Hz\n", frequency, max_freq);
+	frequency = max_freq;
     }
     
     if (frequency <= BUS_CLOCK_BASE) {
@@ -364,6 +434,26 @@ int io_set_freq(unsigned int frequency)
     }
 
     return (int) actual_freq;
+}
+
+// period - desired JTAG TCK period in ns
+//
+// return: if error, return an error code < 0
+//         if success, return the actual period in ns
+//
+int io_set_period(unsigned int period)
+{
+    int actPeriod;
+
+    // convert period in ns to frequency in Hz and set the TCK frequency
+    actPeriod = io_set_freq( 1000000000 / period );
+
+    if (actPeriod > 0) {
+	// If no error in setting frequency, convert it back to a period in ns.
+	actPeriod = 1000000000 / actPeriod;
+    }
+    
+    return  actPeriod;
 }
 
 int io_init(int product, int vendor, int verbosity)
@@ -483,9 +573,6 @@ int io_init(int product, int vendor, int verbosity)
     }
 
 
-    /* Give the chip a few mS to initialize */
-    //@@@usleep(25000);
-    
     res = ftdi_usb_purge_buffers(&ftdi);        
     if (res < 0)
     {
@@ -494,7 +581,7 @@ int io_init(int product, int vendor, int verbosity)
         return 1;
     }
 
-    res = io_set_freq(1000000);
+    res = io_set_freq(4000000);
     if (res < 0)
     {
         fprintf(stderr, "io_set_frequency %d\n", res);
@@ -502,20 +589,8 @@ int io_init(int product, int vendor, int verbosity)
         return 1;
     }
 
-#if 0    
-    //@@@res = ftdi_set_baudrate(&ftdi, 750000); /* Automatically Multiplied by 4 */
-    res = ftdi_set_baudrate(&ftdi, 50000); /* Measured to be a 2MHz TCK frequency */
-        
-    if (res < 0)
-    {
-        fprintf(stderr, "ftdi_set_baudrate %d (%s)\n", res, ftdi_get_error_string(&ftdi));
-        io_close();
-        return 1;
-    }
-#endif
-    
     // Update state of outputs to the default
-    //@@@printf("Setting initial outputs\n");
+    if (vlevel > 2) printf("Setting initial outputs\n");
     buf[0] = SET_BITS_LOW;
     buf[1] = IO_DEFAULT_OUT;
     buf[2] = IO_OUTPUT;
@@ -570,10 +645,8 @@ int io_scan(const unsigned char *TMS, const unsigned char *TDI, unsigned char *T
     unsigned char *TDOstart = TDO;
     int numTDOBytes = (bits+7) / 8;     // Number of TDO bytes to be received
 
-    //@@@int i, res; 
-    //@@@int res, len;
     int res;
-    int cmdBytes = 0, rxBytes = 0, nextBits=0;
+    int cmdBytes = 0, rxBytes = 0, bitsUsed=0;
     
 #ifndef USE_ASYNC
 #error no async
@@ -586,47 +659,45 @@ int io_scan(const unsigned char *TMS, const unsigned char *TDI, unsigned char *T
 #endif
 #endif
 
-    printf("io_scan() of %d bits\n", bits);
-
-    // Clear out TDO bits to make it easier to assemble (likely NOT necessary)
-    //@@@memset(TDO, 0, (bits + 7) / 8);
-    
-#if 0    
-    // Send a test of 6 bits with TMS high and 1 last bit with TMS low
-    // while TDI remains low the entire time.
-    buffer[0] = RW_BITS_TMS_PVE_NVE;
-    buffer[1] = 7 - 1;		/* 7 bits */
-    buffer[2] = 0x03f;
-    len = 3;
-    res = ftdi_write_data(&ftdi, buffer, len);
-    if (res != len)
-    {
-	fprintf(stderr, "ftdi_write_data() for 0x%x: %d (%s)\n", buffer[0], res, ftdi_get_error_string(&ftdi));
-        return -1;
-    }
-
-    printf("Reading back response\n");
-    res = io_read_data (buffer, 1);
-    printf("FTDI Response: 0x%02x\n",buffer[0]);
-    if (res < 0) {
-        fprintf(stderr, "read failed, error %d (%s)\n", res, ftdi_get_error_string(&ftdi));
-    } else if (buffer[0] == 0xfa) {
-        fprintf(stderr, "Invalid FTDI MPSSE command at %d\n",buffer[1]);
-    }
-#endif
+    if (vlevel > 3) printf("io_scan() of %d bits\n", bits);
 
     cmdp = cmdbuf;
     cmdBytes = 0;
     rxBytes = 0;
     while (bits > 0) {
 	int cmdsz, rxsz;
-	// @@@ At first, send to FTDI using bit mode for every byte
-	nextBits = (bits > 8) ? 8 : bits;
-	if (vlevel > 4) printf("1: bits = %d\n", bits);
-	io_build_cmd_bits(TMS, TDI, nextBits, cmdp, &cmdsz, &rxsz);
-	if (vlevel > 4) printf("2: nextBits = %d, cmdsz = %d, rxsz = %d\n", nextBits, cmdsz, rxsz);
-	TMS++;
-	TDI++;
+
+	if (bits < 16 || *TMS || *(TMS+1)) {
+	    // If less than two bytes to send, or current TMS byte has
+	    // '1's or the next TMS byte has 1's, handle using bit
+	    // commands.
+	    //
+	    // The reason for checking for less than 16 bits or for
+	    // the next TMS byte is because it is slightly more
+	    // efficient to send a single byte using a bit command
+	    // than a byte command since the byte commands use two
+	    // bytes for the byte length. So if io_build_cmd_bits()
+	    // will be called on the next byte, call it for this byte
+	    // as well. Note that the number of remaining bits is
+	    // checked first so that TMS buffer does not go past the
+	    // end.
+	    //
+	    // NOTE: io_build_cmd_bits() will not use more than 8 bits
+	    // so next byte can be checked whether it should be sent
+	    // with bit commands or byte commands.
+	    //
+	    if (vlevel > 4) printf("1: bits = %d\n", bits);
+	    bitsUsed = io_build_cmd_bits(TMS, TDI, bits, cmdp, &cmdsz, &rxsz);
+	    if (vlevel > 4) printf("2: bitsUsed = %d, cmdsz = %d, rxsz = %d\n", bitsUsed, cmdsz, rxsz);
+	} else {
+	    // Otherwise, handle with byte commands
+	    if (vlevel > 4) printf("5: bits = %d\n", bits);
+	    bitsUsed = io_build_cmd_bytes(TMS, TDI, bits, cmdp, &cmdsz, &rxsz);
+	    if (vlevel > 4) printf("6: bitsUsed = %d, cmdsz = %d, rxsz = %d\n", bitsUsed, cmdsz, rxsz);
+	}
+	 /* update TMS & TDI pointers to skip bytes already consumed */
+	TMS += ((bitsUsed+7) >> 3);
+	TDI += ((bitsUsed+7) >> 3);
 	
 	if ((cmdBytes + cmdsz) > FTDI_WRITE_CHUNK_SIZE) {
 	    // cannot fit in the new commands without exceeding
@@ -653,7 +724,7 @@ int io_scan(const unsigned char *TMS, const unsigned char *TDI, unsigned char *T
 	cmdp += cmdsz;
 	cmdBytes += cmdsz;
 	rxBytes += rxsz;
-	bits -= nextBits;
+	bits -= bitsUsed;
 	if (vlevel > 4) printf("3: cmdBytes = %d, rxBytes = %d, bits = %d\n", cmdBytes, rxBytes, bits);
     }
 
@@ -670,105 +741,7 @@ int io_scan(const unsigned char *TMS, const unsigned char *TDI, unsigned char *T
     if ((TDO - TDOstart) > numTDOBytes) {
 	fprintf(stderr, "io_scan(): wrote too many bytes into TDO! Exp.: %d  Act. %d\n", numTDOBytes, (TDO - TDOstart));
     }
-    
-#if 0    
-    if (bits > sizeof(buffer)/2)
-    {
-        fprintf(stderr, "FATAL: out of buffer space for %d bits\n", bits);
-        return -1;
-    }
         
-    for (i = 0; i < bits; ++i)
-    {
-        unsigned char v = IO_DEFAULT_OUT;
-        if (TMS[i/8] & (1<<(i&7)))
-            v |= PORT_TMS;
-        if (TDI[i/8] & (1<<(i&7)))
-            v |= PORT_TDI;
-        buffer[i * 2 + 0] = v;
-        buffer[i * 2 + 1] = v | PORT_TCK;
-    }
-
-#ifndef USE_ASYNC
-    r = 0;
-        
-    while (r < bits * 2)
-    {
-        t = bits * 2 - r;
-        if (t > FTDI_MAX_WRITESIZE)
-            t = FTDI_MAX_WRITESIZE;
-                
-        printf("writing %d bytes\n", t);
-        res = ftdi_write_data(&ftdi, buffer + r, t);
-
-        if (res != t)
-        {
-            fprintf(stderr, "ftdi_write_data %d (%s)\n", res, ftdi_get_error_string(&ftdi));
-            return -1;
-        }
-                
-        i = 0;
-                
-        while (i < t)
-        {
-            res = ftdi_read_data(&ftdi, buffer + r + i, t - i);
-
-            if (res < 0)
-            {
-                fprintf(stderr, "ftdi_read_data %d (%s)\n", res, ftdi_get_error_string(&ftdi));
-                return -1;
-            }
-                        
-            i += res;
-        }
-                
-        r += t;
-    }
-#else
-#ifdef USE_LIBFTDI1
-    vres = ftdi_write_data_submit(&ftdi, buffer, bits * 2);
-    if (!vres)
-    {
-        fprintf(stderr, "ftdi_write_data_submit (%s)\n", ftdi_get_error_string(&ftdi));
-        return -1;
-    }
-#else
-    res = ftdi_write_data_async(&ftdi, buffer, bits * 2);
-    if (res < 0)
-    {
-        fprintf(stderr, "ftdi_write_data_async %d (%s)\n", res, ftdi_get_error_string(&ftdi));
-        return -1;
-    }
-#endif
-
-    i = 0;
-        
-    while (i < bits * 2)
-    {
-        res = ftdi_read_data(&ftdi, buffer + i, bits * 2 - i);
-
-        if (res < 0)
-        {
-            fprintf(stderr, "ftdi_read_data %d (%s)\n", res, ftdi_get_error_string(&ftdi));
-            return -1;
-        }
-                
-        i += res;
-    }
-#endif
-
-    memset(TDO, 0, (bits + 7) / 8);
-        
-    for (i = 0; i < bits; ++i)
-    {
-        if (buffer[i * 2 + 1] & PORT_TDO)
-        {
-            TDO[i/8] |= 1 << (i&7);
-        }
-    }
-
-#endif
-    
     return 0;
 }
 

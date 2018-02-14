@@ -22,6 +22,9 @@
 #define FTDI_MAX_WRITESIZE 256
 #endif
 
+//@@@#define FTDI_BAUDRATE (750000)  /* Have not measured this, yet */
+#define FTDI_BAUDRATE (50000)  /* Measured to be a 2MHz TCK frequency */
+
 struct ftdi_context ftdi;
 
 void io_close(void);
@@ -80,8 +83,7 @@ int io_init(int product, int vendor, int verbosity)
         return 1;
     }
         
-    //@@@res = ftdi_set_baudrate(&ftdi, 750000); /* Automatically Multiplied by 4 */
-    res = ftdi_set_baudrate(&ftdi, 50000); /* Measured to be a 2MHz TCK frequency */
+    res = ftdi_set_baudrate(&ftdi, FTDI_BAUDRATE);
         
     if (res < 0)
     {
@@ -92,6 +94,21 @@ int io_init(int product, int vendor, int verbosity)
         
     return 0;
 }
+
+// period - desired JTAG TCK period in ns
+//
+// return: if error, return an error code < 0
+//         if success, return the actual period in ns
+//
+int io_set_period(unsigned int period)
+{
+    int actPeriod;
+
+    actPeriod = 1000000000 / (FTDI_BAUDRATE * 40);
+    
+    return  actPeriod;
+}
+
 
 int io_scan(const unsigned char *TMS, const unsigned char *TDI, unsigned char *TDO, int bits)
 {
