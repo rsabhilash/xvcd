@@ -6,21 +6,25 @@
 
 // NOTE: Merged in changes from https://github.com/ObKo/xvcd to support libftdi1
 
-#define BUILD_FOR_H_SERIES (-1)
-#define USE_ASYNC
-#undef  USE_LIBFTDI1
+// Start with 4 MHz and let Vivado send settck: commands to change as
+// it desires.
+#define FTDI_TCK_DEFAULT_FREQ (4000000)
 
 ///////////////////////////////////////////////
 
-// Each read also returns 2 status bytes which are not returned to
-// us. Not sure if this really counts against CHUNK SIZE but
-// subtracting 2 for FTDI_READ_CHUNK_SIZE just in case.
-#define FTDI_WRITE_CHUNK_SIZE  (2048)   // Saw 65535 used
-#define FTDI_READ_CHUNK_SIZE  (2048-2)  // Saw 65535 used
-
-#ifndef USE_ASYNC
-#define FTDI_MAX_WRITESIZE 256
-#endif
+// Size of the FTDI Write and Read buffers since they are statically
+// defined. [TODO: make these dynamically defined].
+//
+// *2 on Write BUffer size because the write buffer does not know if
+// exceeds the FTDI Write FIFO size until the command is built. So
+// need more space so can hold the partial command that went over the
+// FTDI Write buffer size while the previous commands are being sent
+// to the FTDI.
+//
+// +30 is just to give a little extar space just in case.
+//
+#define FTDI_WRITE_BUFFER_SIZE ((2048*2)+30)
+#define FTDI_READ_BUFFER_SIZE  (2048+30)
 
 /* create a right shifted bit mask for number of bits */
 #define BITMASK(bits)  (0xff >> (8-(bits)))
@@ -72,11 +76,81 @@
 #define RW_BITS_TMS_NVE_PVE  (0x6e)
 #define RW_BITS_TMS_NVE_NVE  (0x6f)
 
+struct fifo_size
+{
+    unsigned int tx;
+    unsigned int rx;
+};
+
+    
 static struct ftdi_context ftdi;
 static int vlevel = 0;
 
 
 void io_close(void);
+
+// Look at type in ftdi_context and report if this FTDI device is the
+// more advanced H series or not.
+//
+// Although safe to call without initializing or opening the FTDI
+// device, the result will be inaccurate. So best to only use after
+// calling a ftdi_usb_openXXX function.
+//
+// return: logical true if ftdi->type indicates this is a H series, otherwise logical false
+int io_is_H_series (struct ftdi_context *ftdi)
+{
+
+    switch(ftdi->type) {
+	case TYPE_2232H:
+	case TYPE_4232H:
+	case TYPE_232H:
+	    return !0;
+	default:
+	    return 0;
+    }
+
+}
+
+// Based on the chip type, return the TX and RX FIFO byte sizes. This
+// information was taken from the Python code for
+// pyftdi (https://github.com/eblot/pyftdi).
+//
+// Although safe to call without initializing or opening the FTDI
+// device, the result will be inaccurate. So best to only use after
+// calling a ftdi_usb_openXXX function.
+//
+// return: a structure with fifo sizes for TX (write to FTDI) and RX (read from FTDI)
+struct fifo_size io_get_fifo_sizes (struct ftdi_context *ftdi)
+{
+
+    // Original comment from pyftdi:
+    //
+    // # Note that the FTDI datasheets contradict themselves, so
+    // # the following values may not be the right ones...
+    // # Note that 'TX' and 'RX' are inverted with the datasheet terminology:
+    // # Values here are seen from the host perspective, whereas datasheet
+    // # values are defined from the device perspective
+
+    struct fifo_size fifo;
+    
+    switch(ftdi->type) {
+    case TYPE_2232C: fifo.tx = 384; fifo.rx = 128; break;   // BCD Device: 0x0500  # TX: 384, RX: 128
+    case TYPE_R:     fifo.tx = 128; fifo.rx = 256; break;   // BCD Device: 0x0600  # TX: 128, RX: 256
+    case TYPE_2232H: fifo.tx = 4096; fifo.rx = 4096; break; // BCD Device: 0x0700  # TX: 4KiB, RX: 4KiB
+    case TYPE_4232H: fifo.tx = 2048; fifo.rx = 2048; break; // BCD Device: 0x0800  # TX: 2KiB, RX: 2KiB
+    case TYPE_232H:  fifo.tx = 1024; fifo.rx = 1024; break; // BCD Device: 0x0900  # TX: 1KiB, RX: 1KiB
+	// Newer Type which only shows up in newer version of
+	// libftdi. Leave out to minimize compilation problems on
+	// other systems. However, if using this type and the newer
+	// libftdi, feel free to uncomment it.
+	//
+	//case TYPE_230X: return {512, 512}; // BCD Device: 0x1000    # TX: 512, RX: 512
+    default: fifo.tx = 128; fifo.rx = 128; break;  //  # default sizes
+    }
+
+    return fifo;
+}
+
 
 int io_read_data (unsigned char *buffer, unsigned int len)
 {
@@ -120,17 +194,17 @@ int io_read_data (unsigned char *buffer, unsigned int len)
 //
 int io_transfer_mpsse(unsigned char *cmdp, int cmdBytes, int rxBytes, unsigned char **TDOpp)
 {
-    static unsigned char rxbuf[FTDI_READ_CHUNK_SIZE+30];
+    static unsigned char rxbuf[FTDI_READ_BUFFER_SIZE];
     unsigned char *rxp;
     unsigned int len;
     unsigned int bits;
     unsigned int bi;		/* bit index */
     int res;
     
-    // Make sure do not blow the READ CHUNK SIZE - should be sized to
+    // Make sure do not blow the rxbuf buffer - should be sized to
     // avoid this but notify in case that is not the case.
-    if (rxBytes > FTDI_READ_CHUNK_SIZE) {
-	fprintf(stderr, "io_transfer_mpsse(): Number of read bytes (%d) exceeds read chunk size (%d)! Aborting transfer!\n", rxBytes, FTDI_READ_CHUNK_SIZE);
+    if (rxBytes > sizeof(rxbuf)) {
+	fprintf(stderr, "io_transfer_mpsse(): Number of read bytes (%d) exceeds read buffer size (%d)! Aborting transfer!\n", rxBytes, sizeof(rxbuf));
 	return -1;
     }
 
@@ -320,6 +394,7 @@ int io_build_cmd_bits(const unsigned char *TMSp, const unsigned char *TDIp, int 
 //
 int io_build_cmd_bytes(const unsigned char *TMSp, const unsigned char *TDIp, int bits, unsigned char *cmdp, int *cmdszp, int *rxszp)
 {
+    struct fifo_size fifo_sz = io_get_fifo_sizes(&ftdi);
     int bytes = (bits >> 3);	/* number of *full* bytes left in TMS & TDI */
     int i;			/* will be used to search for number of bits in bit stream for next MPSSE command */
 
@@ -336,9 +411,9 @@ int io_build_cmd_bytes(const unsigned char *TMSp, const unsigned char *TDIp, int
     // of TDI that can be sent before TMS is non-0.
     //
     // Make sure do not build a command that cannot completely fit in
-    // the WRITE CHUNK SIZE.
+    // the Write FIFO (TX).
     i = 0; 
-    while ((i < bytes) && (i < (FTDI_WRITE_CHUNK_SIZE-3)) && !(*TMSp++)) {
+    while ((i < bytes) && (i < (fifo_sz.tx-3)) && !(*TMSp++)) {
 	i++;			    
     }
 
@@ -369,7 +444,7 @@ int io_set_freq(unsigned int frequency)
 {
     const unsigned int BUS_CLOCK_BASE = 6000000;
     const unsigned int BUS_CLOCK_HIGH = 30000000;
-    const unsigned int max_freq =  (BUILD_FOR_H_SERIES ? BUS_CLOCK_HIGH : BUS_CLOCK_BASE);
+    const unsigned int max_freq =  (io_is_H_series(&ftdi) ? BUS_CLOCK_HIGH : BUS_CLOCK_BASE);
     unsigned int divisor, actual_freq;
     unsigned char divcode;
     unsigned char buf[6];
@@ -395,9 +470,10 @@ int io_set_freq(unsigned int frequency)
     }
 
     cnt = 0;
-#ifdef BUILD_FOR_H_SERIES
-    buf[cnt++] = divcode;
-#endif
+
+    if (io_is_H_series(&ftdi)) {
+	buf[cnt++] = divcode;
+    }
     buf[cnt++] = TCK_DIVISOR;
     buf[cnt++] = divisor & 0x00ff;
     buf[cnt++] = (divisor >> 8) & 0x00ff;
@@ -456,11 +532,35 @@ int io_set_period(unsigned int period)
     return  actPeriod;
 }
 
-int io_init(int product, int vendor, int verbosity)
+// Pass in the selected FTDI device to be opened
+//
+// vendor: vendor ID of desired device, or -1 to use the default
+//
+// product: product ID of desired device, or -1 to use the default
+//
+// serial: string of FTDI serial number to match in case of multiple
+//         FTDI devices plugged into host with the same Vendor/Product
+//         IDs or NULL to select first device found.
+//
+// index: number starting at 0 to select FTDI device. Can be used
+//        instead of serial, but serial is a more definite match since
+//        index depends on how host numbers the devices. If both
+//        serial and index is given, index is ignored. Use a value of
+//        0 to select first FTDI device that is found.
+//
+// interface: starts at 1 and selects one of multiple "ports" in the
+//            selected device. For example, the FT4232H and FT2232H
+//            have multiple ports. If not used, simply pass in 1 and
+//            the first one, typically labeled "A", will be selected.
+//
+// verbosity: 0 means no output, increase from 0 for more and more debugging output
+//
+int io_init(int vendor, int product, const char* serial, unsigned int index, unsigned int interface, int verbosity)
 {
-    int res, len;
     unsigned char buf[16];
-
+    int res, len;
+    struct fifo_size fifo_sz;
+    
     if (product < 0)
         product = 0x6010;
     if (vendor < 0)
@@ -476,8 +576,8 @@ int io_init(int product, int vendor, int verbosity)
         fprintf(stderr, "ftdi_init: %d (%s)\n", res, ftdi_get_error_string(&ftdi));
         return 1;
     }
-        
-    res = ftdi_usb_open(&ftdi, vendor, product);
+    
+    res = ftdi_usb_open_desc_index(&ftdi, vendor, product, NULL, serial, index);
         
     if (res < 0)
     {
@@ -486,8 +586,30 @@ int io_init(int product, int vendor, int verbosity)
         return 1;
     }
 
+    if (vlevel > 0) {
+	printf("Opened FTDI 0x%04x:0x%04x, type=", vendor,product);
+	switch(ftdi.type) {
+	case TYPE_AM: printf("AM"); break;
+	case TYPE_BM: printf("BM"); break;
+	case TYPE_2232C: printf("2232C"); break;
+	case TYPE_R: printf("R"); break;
+	case TYPE_2232H: printf("2232H"); break;
+	case TYPE_4232H: printf("4232H"); break;
+	case TYPE_232H: printf("232H"); break;
+	    // Newer Type which only shows up in newer version of
+	    // libftdi. Leave out to minimize compilation problems on
+	    // other systems.
+	    //
+	    //case TYPE_230X: printf("230X"); break;
+	default: printf("!UNKNOWN!"); break;
+	}
+	printf("\n\n");
+    }	
 
-    // @@@ Not sure if this is needed
+    // Get the expected FIFO Siz of this FTDI device
+    fifo_sz = io_get_fifo_sizes(&ftdi);
+    
+    //NOTE: Not sure if this is needed, but it seems like a good idea
     res = ftdi_usb_reset(&ftdi);
     if (res < 0) {
         fprintf(stderr, "Unable to reset FTDI device: %d (%s).\n", res, ftdi_get_error_string(&ftdi));
@@ -495,24 +617,32 @@ int io_init(int product, int vendor, int verbosity)
         return 1;
     }
 
-    // @@@ Not sure if this is needed
+#if 0    
+    // @@@ Not sure if this is needed. Could try different latency
+    // values to see if can improve performance but might impact how
+    // well the host system works.
     res = ftdi_set_latency_timer(&ftdi, 2);
     if (res < 0) {
 	fprintf(stderr, "Unable to set latency timer: %d (%s).\n", res, ftdi_get_error_string(&ftdi));
         io_close();
         return 1;
     }
-
-    // @@@ Not sure if this is needed
-    res = ftdi_write_data_set_chunksize(&ftdi, FTDI_WRITE_CHUNK_SIZE);
+#endif
+    
+    // Set the write chunk size to the full TX FIFO size. Not
+    // completely sure, but believe this is the most efficient way of
+    // handling MPSSE commands.
+    res = ftdi_write_data_set_chunksize(&ftdi, fifo_sz.tx);
     if (res) {
 	fprintf(stderr, "Unable to set write chunk size: %d (%s).\n", res, ftdi_get_error_string(&ftdi));
         io_close();
         return 1;
     }
     
-    // @@@ Not sure if this is needed
-    res = ftdi_read_data_set_chunksize(&ftdi, FTDI_READ_CHUNK_SIZE);
+    // Set the read chunk size to the full RX FIFO size. Not
+    // completely sure, but believe this is the most efficient way of
+    // handling MPSSE commands.
+    res = ftdi_read_data_set_chunksize(&ftdi, fifo_sz.rx);
     if (res) {
 	fprintf(stderr, "Unable to set read chunk size: %d (%s).\n", res, ftdi_get_error_string(&ftdi));
         io_close();
@@ -520,7 +650,7 @@ int io_init(int product, int vendor, int verbosity)
     }
 
 #if 0    
-    // RESET FTDI
+    // RESET FTDI - seems to cause more harm (I/Os reset) than good, so skip.
     res = ftdi_set_bitmode(&ftdi, IO_OUTPUT, BITMODE_RESET);
 
     if (res < 0) 
@@ -531,11 +661,11 @@ int io_init(int product, int vendor, int verbosity)
     }
 #endif
     
-    // Set the USB read and write timeouts
+    // Set the USB read and write timeouts (not sure if this really
+    // helps but does not seem to hurt)
     ftdi.usb_read_timeout = 120000;
     ftdi.usb_write_timeout = 120000;
 
-#if 0    
     res = ftdi_usb_purge_buffers(&ftdi);        
     if (res < 0)
     {
@@ -545,14 +675,15 @@ int io_init(int product, int vendor, int verbosity)
     }
         
     // Disable event and error characters
+    //
+    // NOTE: Not sure if this is really needed but does not seem to hurt.
     res = ftdi_set_event_char(&ftdi, 0, 0);
     if (res < 0)
     {
         fprintf(stderr, "ftdi_set_event_char %d (%s)\n", res, ftdi_get_error_string(&ftdi));
         io_close();
         return 1;
-    }
-        
+    }        
     res = ftdi_set_error_char(&ftdi, 0, 0);
     if (res < 0)
     {
@@ -560,7 +691,6 @@ int io_init(int product, int vendor, int verbosity)
         io_close();
         return 1;
     }
-#endif
     
     // Enable MPSSE mode
     res = ftdi_set_bitmode(&ftdi, IO_OUTPUT, BITMODE_MPSSE);
@@ -581,7 +711,7 @@ int io_init(int product, int vendor, int verbosity)
         return 1;
     }
 
-    res = io_set_freq(4000000);
+    res = io_set_freq(FTDI_TCK_DEFAULT_FREQ);
     if (res < 0)
     {
         fprintf(stderr, "io_set_frequency %d\n", res);
@@ -631,8 +761,8 @@ int io_init(int product, int vendor, int verbosity)
         fprintf(stderr, "Invalid FTDI MPSSE command at %d\n",buf[1]);
 	return -253;
     }
-    
-    printf("FTDI ready with MPSSE mode\n");
+
+    if (vlevel > 0) printf("FTDI ready with MPSSE mode\n\n");
 
     return 0;
 }
@@ -640,7 +770,8 @@ int io_init(int product, int vendor, int verbosity)
 
 int io_scan(const unsigned char *TMS, const unsigned char *TDI, unsigned char *TDO, int bits)
 {
-    static unsigned char cmdbuf[2*FTDI_WRITE_CHUNK_SIZE];
+    static unsigned char cmdbuf[FTDI_WRITE_BUFFER_SIZE];
+    struct fifo_size fifo_sz = io_get_fifo_sizes(&ftdi);
     unsigned char *cmdp = cmdbuf;
     unsigned char *TDOstart = TDO;
     int numTDOBytes = (bits+7) / 8;     // Number of TDO bytes to be received
@@ -648,17 +779,6 @@ int io_scan(const unsigned char *TMS, const unsigned char *TDI, unsigned char *T
     int res;
     int cmdBytes = 0, rxBytes = 0, bitsUsed=0;
     
-#ifndef USE_ASYNC
-#error no async
-    int r, t;
-#else 
-#ifdef USE_LIBFTDI1
-    void *vres;
-#else
-    /* declarations for USE_ASYNC go here */
-#endif
-#endif
-
     if (vlevel > 3) printf("io_scan() of %d bits\n", bits);
 
     cmdp = cmdbuf;
@@ -698,10 +818,15 @@ int io_scan(const unsigned char *TMS, const unsigned char *TDI, unsigned char *T
 	 /* update TMS & TDI pointers to skip bytes already consumed */
 	TMS += ((bitsUsed+7) >> 3);
 	TDI += ((bitsUsed+7) >> 3);
+
+	// check that did not overflow cmdbuf array
+	if ((cmdBytes + cmdsz) > FTDI_WRITE_BUFFER_SIZE) {
+	    fprintf(stderr, "io_scan(): cmdbuf OVERFLOW! cmdbuf is now %d bytes. Fix code to prevent this from happening!\n", (cmdBytes + cmdsz));
+	}        	
 	
-	if ((cmdBytes + cmdsz) > FTDI_WRITE_CHUNK_SIZE) {
+	if ((cmdBytes + cmdsz) > fifo_sz.tx) {
 	    // cannot fit in the new commands without exceeding
-	    // FTDI_WRITE_CHUNK_SIZE, so send on cmdbuf and then
+	    // FTDI FIFO Write Size, so send on cmdbuf and then
 	    // restart at beginning of buffer with the commands that
 	    // we just received.
 	    res = io_transfer_mpsse(cmdbuf, cmdBytes, rxBytes, &TDO);

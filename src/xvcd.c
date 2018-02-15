@@ -21,7 +21,17 @@
 
 #define STRINGIFY(x) #x
 #define TOSTRING(x) STRINGIFY(x)
-#define VECTOR_IN_SZ 2048	/* Maximum input vector size in bytes */
+
+// Maximum input vector size in bytes. TMS and TDI byte size combined.
+//
+// Only tested with 4232H FTDI device which has a 2048 FIFO size. Not
+// sure but this may need to be reduced for older devices with smaller
+// FIFO sizes. It should not matter but try different values here if
+// cannot get Xilinx device to successfully reprogram.
+//
+// NOTE: Did test this with the value 4096 with a FT4232H device and
+// the Xilinx device failed to program.
+#define VECTOR_IN_SZ 2048
 
 static int jtag_state;
 static int vlevel = 0;
@@ -345,12 +355,13 @@ int main(int argc, char **argv)
     int s;
     int c;
     int port = 2542;
-    int product = -1, vendor = -1;
+    int product = -1, vendor = -1, index = 0, interface = 1;
+    char * serial = NULL;
     struct sockaddr_in address;
         
     opterr = 0;
         
-    while ((c = getopt(argc, argv, "vV:P:p:")) != -1)
+    while ((c = getopt(argc, argv, "vV:P:S:I:i:p:")) != -1)
         switch (c)
         {
         case 'p':
@@ -362,12 +373,21 @@ int main(int argc, char **argv)
         case 'P':
             product = strtoul(optarg, NULL, 0);
             break;
+        case 'S':
+            serial = optarg;
+            break;
+        case 'I':
+            index = strtoul(optarg, NULL, 0);
+            break;
+        case 'i':
+            interface = strtoul(optarg, NULL, 0);
+            break;
 	case 'v':
 	    vlevel++;
 	    //printf ("verbosity level is %d\n", vlevel);
 	    break;
 	case '?':
-            fprintf(stderr, "usage: %s [-v] [-V vendor] [-P product] [-p port]\n", *argv);
+            fprintf(stderr, "usage: %s [-v] [-V vendor] [-P product] [-S serial] [-I index] [-i interface] [-p port]\n", *argv);
             return 1;
         }
 
@@ -388,7 +408,7 @@ int main(int argc, char **argv)
 	printf("You should be able to use the relevant tool normally.\n\n");
     }
     
-    if (io_init(product, vendor, vlevel))
+    if (io_init(vendor, product, serial, index, interface, vlevel))
     {
         fprintf(stderr, "io_init failed\n");
         return 1;

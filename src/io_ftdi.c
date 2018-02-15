@@ -29,7 +29,30 @@ struct ftdi_context ftdi;
 
 void io_close(void);
 
-int io_init(int product, int vendor, int verbosity)
+// Pass in the selected FTDI device to be opened
+//
+// vendor: vendor ID of desired device, or -1 to use the default
+//
+// product: product ID of desired device, or -1 to use the default
+//
+// serial: string of FTDI serial number to match in case of multiple
+//         FTDI devices plugged into host with the same Vendor/Product
+//         IDs or NULL to select first device found.
+//
+// index: number starting at 0 to select FTDI device. Can be used
+//        instead of serial, but serial is a more definite match since
+//        index depends on how host numbers the devices. If both
+//        serial and index is given, index is ignored. Use a value of
+//        0 to select first FTDI device that is found.
+//
+// interface: starts at 1 and selects one of multiple "ports" in the
+//            selected device. For example, the FT4232H and FT2232H
+//            have multiple ports. If not used, simply pass in 1 and
+//            the first one, typically labeled "A", will be selected.
+//
+// verbosity: 0 means no output, increase from 0 for more and more debugging output
+//
+int io_init(int vendor, int product, const char* serial, unsigned int index, unsigned int interface, int verbosity)
 {
     int res;
     unsigned char buf[1];
@@ -47,7 +70,7 @@ int io_init(int product, int vendor, int verbosity)
         return 1;
     }
         
-    res = ftdi_usb_open(&ftdi, vendor, product);
+    res = ftdi_usb_open_desc_index(&ftdi, vendor, product, NULL, serial, index);
         
     if (res < 0)
     {
