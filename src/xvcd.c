@@ -183,7 +183,7 @@ static int sread(int fd, void *target, int len)
 //   after going test_logic_reset. This ensures that one
 //   client can't disrupt the other client's IR or state.
 //
-int handle_data(int fd /* @@@ , volatile jtag_t* ptr */)
+int handle_data(int fd, unsigned long frequency)
 {
 
     int i;
@@ -217,7 +217,14 @@ int handle_data(int fd /* @@@ , volatile jtag_t* ptr */)
                 return 1;
 	    // Convert the 4-byte little endian integer after "settck:" to be an integer
 	    int32_t period, actPeriod;
-	    period = getInt32((unsigned char*)cmd+5);
+
+	    // if frequency argument is non-0, use it instead of the
+	    // period from the settck: command
+	    if (frequency == 0) {
+		period = getInt32((unsigned char*)cmd+5);
+	    } else {
+		period = 1000000000 / frequency;
+	    }
 
 	    actPeriod = io_set_period((unsigned int)period);
 
@@ -355,13 +362,14 @@ int main(int argc, char **argv)
     int s;
     int c;
     int port = 2542;
-    int product = -1, vendor = -1, index = 0, interface = 1;
+    int product = -1, vendor = -1, index = 0, interface = 0;
+    unsigned long frequency = 0;
     char * serial = NULL;
     struct sockaddr_in address;
         
     opterr = 0;
         
-    while ((c = getopt(argc, argv, "vV:P:S:I:i:p:")) != -1)
+    while ((c = getopt(argc, argv, "vV:P:S:I:i:p:f:")) != -1)
         switch (c)
         {
         case 'p':
@@ -386,8 +394,21 @@ int main(int argc, char **argv)
 	    vlevel++;
 	    //printf ("verbosity level is %d\n", vlevel);
 	    break;
+        case 'f':
+            frequency = strtoul(optarg, NULL, 0);
+            break;
 	case '?':
-            fprintf(stderr, "usage: %s [-v] [-V vendor] [-P product] [-S serial] [-I index] [-i interface] [-p port]\n", *argv);
+            fprintf(stderr, "usage: %s [-v] [-V vendor] [-P product] [-S serial] [-I index] [-i interface] [-f frequency] [-p port]\n\n", *argv);
+	    fprintf(stderr, "          -v: verbosity, increase verbosity by adding more v's\n");
+	    fprintf(stderr, "          -V: vendor ID, use to select the desired FTDI device if multiple on host. (default = 0x0403)\n");
+	    fprintf(stderr, "          -P: product ID, use to select the desired FTDI device if multiple on host. (default = 0x6010)\n");
+	    fprintf(stderr, "          -S: serial number, use to select the desired FTDI device if multiple devices with same vendor\n");
+	    fprintf(stderr, "              and product IDs on host. \'lsusb -v\' can be used to find the serial numbers.\n");
+	    fprintf(stderr, "          -I: USB index, use to select the desired FTDI device if multiple devices with same vendor\n");
+	    fprintf(stderr, "              and product IDs on host. Can be used instead of -S but -S is more definitive. (default = 0)\n");
+	    fprintf(stderr, "          -i: interface, select which \'port\' on the selected device to use if multiple port device. (default = 0)\n");
+	    fprintf(stderr, "          -f: frequency in Hz, force TCK frequency. Otherwise, will set from settck: commands sent by client. (default = 0)\n");
+	    fprintf(stderr, "          -p: TCP port, TCP port to listen for connections from client (default = %d)\n\n", port);
             return 1;
         }
 
@@ -408,7 +429,7 @@ int main(int argc, char **argv)
 	printf("You should be able to use the relevant tool normally.\n\n");
     }
     
-    if (io_init(vendor, product, serial, index, interface, vlevel))
+    if (io_init(vendor, product, serial, index, interface, frequency, vlevel))
     {
         fprintf(stderr, "io_init failed\n");
         return 1;
@@ -500,8 +521,7 @@ int main(int argc, char **argv)
                 //
                 // Otherwise, do work.
                 //
-                //@@@else if (handle_data(fd,ptr)) {
-                else if (handle_data(fd))
+                else if (handle_data(fd, frequency))
                 {
                     //
                     // Close connection when required.

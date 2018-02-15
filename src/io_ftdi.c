@@ -45,14 +45,18 @@ void io_close(void);
 //        serial and index is given, index is ignored. Use a value of
 //        0 to select first FTDI device that is found.
 //
-// interface: starts at 1 and selects one of multiple "ports" in the
+// interface: starts at 0 and selects one of multiple "ports" in the
 //            selected device. For example, the FT4232H and FT2232H
-//            have multiple ports. If not used, simply pass in 1 and
+//            have multiple ports. If not used, simply pass in 0 and
 //            the first one, typically labeled "A", will be selected.
+//
+// frequency: (in Hz) set TCK frequency - settck: command from the
+//            client is ignored. Pass in 0 to try to obey settck:
+//            commands.
 //
 // verbosity: 0 means no output, increase from 0 for more and more debugging output
 //
-int io_init(int vendor, int product, const char* serial, unsigned int index, unsigned int interface, int verbosity)
+int io_init(int vendor, int product, const char* serial, unsigned int index, unsigned int interface, unsigned long frequency, int verbosity)
 {
     int res;
     unsigned char buf[1];

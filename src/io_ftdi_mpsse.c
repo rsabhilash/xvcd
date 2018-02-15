@@ -211,14 +211,18 @@ int io_transfer_mpsse(unsigned char *cmdp, int cmdBytes, int rxBytes, unsigned c
     // Send MPSSE commands
     res = ftdi_write_data(&ftdi, cmdp, cmdBytes);
     if (res != cmdBytes) {
-	fprintf(stderr, "io_transfer_mpsse(): ftdi_write_data %d (%s)\n", res, ftdi_get_error_string(&ftdi));
+	fprintf(stderr, "io_transfer_mpsse(): ftdi_write_data() returned %d (%s)\n", res, ftdi_get_error_string(&ftdi));
 	return -1;
     }
 
     // Read back the expected receive bytes
     res = io_read_data(rxbuf, rxBytes);
     if (res != rxBytes) {
-	fprintf(stderr, "io_transfer_mpsse(): ftdi_read_data %d (%s)\n", res, ftdi_get_error_string(&ftdi));
+	fprintf(stderr, "io_transfer_mpsse(): ftdi_read_data() only read %d bytes.", res);
+	if (res == 0) {
+	    fprintf(stderr, " Timeout Likely!!");
+	}
+	fprintf(stderr, "\n");
 	return -1;
     }
 
@@ -449,7 +453,7 @@ int io_set_freq(unsigned int frequency)
     unsigned char divcode;
     unsigned char buf[6];
     int cnt, res;
-    
+
     if (frequency > max_freq) {
 	fprintf(stderr, "Unsupported frequency: %u Hz. Capping to: %u Hz\n", frequency, max_freq);
 	frequency = max_freq;
@@ -548,14 +552,18 @@ int io_set_period(unsigned int period)
 //        serial and index is given, index is ignored. Use a value of
 //        0 to select first FTDI device that is found.
 //
-// interface: starts at 1 and selects one of multiple "ports" in the
+// interface: starts at 0 and selects one of multiple "ports" in the
 //            selected device. For example, the FT4232H and FT2232H
-//            have multiple ports. If not used, simply pass in 1 and
+//            have multiple ports. If not used, simply pass in 0 and
 //            the first one, typically labeled "A", will be selected.
+//
+// frequency: (in Hz) set TCK frequency - settck: command from the
+//            client is ignored. Pass in 0 to try to obey settck:
+//            commands.
 //
 // verbosity: 0 means no output, increase from 0 for more and more debugging output
 //
-int io_init(int vendor, int product, const char* serial, unsigned int index, unsigned int interface, int verbosity)
+int io_init(int vendor, int product, const char* serial, unsigned int index, unsigned int interface, unsigned long frequency, int verbosity)
 {
     unsigned char buf[16];
     int res, len;
@@ -577,6 +585,31 @@ int io_init(int vendor, int product, const char* serial, unsigned int index, uns
         return 1;
     }
     
+    {
+	enum ftdi_interface selected_interface;
+	// Select interface - must be done before ftdi_usb_open
+	switch (interface) {
+	case 0: selected_interface = INTERFACE_A; break;
+	case 1: selected_interface = INTERFACE_B; break;
+	case 2: selected_interface = INTERFACE_C; break;
+	case 3: selected_interface = INTERFACE_D; break;
+	default: selected_interface = INTERFACE_ANY; break;	
+	}
+
+	if (interface != 0 && interface != 1) {
+	    printf("WARNING: This device may not have a MPSSE on interface %d!\n         Pick another interface if get errors.\n\n", interface);
+	}
+    
+	res = ftdi_set_interface(&ftdi, selected_interface);
+	if (res < 0) {
+	    fprintf(stderr, "ftdi_set_interface(%d): %d (%s)\n", interface, res, ftdi_get_error_string(&ftdi));
+	    ftdi_deinit(&ftdi);
+	    return 1;
+	}
+    }
+
+    if (serial != NULL) index = 0; /* ignore index if serial is given */
+    
     res = ftdi_usb_open_desc_index(&ftdi, vendor, product, NULL, serial, index);
         
     if (res < 0)
@@ -587,7 +620,12 @@ int io_init(int vendor, int product, const char* serial, unsigned int index, uns
     }
 
     if (vlevel > 0) {
-	printf("Opened FTDI 0x%04x:0x%04x, type=", vendor,product);
+	if (serial == NULL) {
+	    printf("Opened FTDI 0x%04x:0x%04x, interface: %d, type=", vendor, product, interface);
+	} else {
+	    printf("Opened FTDI 0x%04x:0x%04x, serial=%s, interface: %d, type=", vendor, product, serial, interface);
+	}
+	
 	switch(ftdi.type) {
 	case TYPE_AM: printf("AM"); break;
 	case TYPE_BM: printf("BM"); break;
@@ -604,7 +642,7 @@ int io_init(int vendor, int product, const char* serial, unsigned int index, uns
 	default: printf("!UNKNOWN!"); break;
 	}
 	printf("\n\n");
-    }	
+    }
 
     // Get the expected FIFO Siz of this FTDI device
     fifo_sz = io_get_fifo_sizes(&ftdi);
@@ -617,17 +655,17 @@ int io_init(int vendor, int product, const char* serial, unsigned int index, uns
         return 1;
     }
 
-#if 0    
-    // @@@ Not sure if this is needed. Could try different latency
-    // values to see if can improve performance but might impact how
-    // well the host system works.
-    res = ftdi_set_latency_timer(&ftdi, 2);
+    // THIS IS VERY IMPORTANT for fast JTAG accesses. If do not change
+    // this, can go from 22 second program times to 75 second program
+    // times. However, it might impact how well the host system works
+    // so use with care. If find the host fails to handle other USB
+    // device, increase this number.
+    res = ftdi_set_latency_timer(&ftdi, 4);
     if (res < 0) {
 	fprintf(stderr, "Unable to set latency timer: %d (%s).\n", res, ftdi_get_error_string(&ftdi));
         io_close();
         return 1;
     }
-#endif
     
     // Set the write chunk size to the full TX FIFO size. Not
     // completely sure, but believe this is the most efficient way of
@@ -711,7 +749,11 @@ int io_init(int vendor, int product, const char* serial, unsigned int index, uns
         return 1;
     }
 
-    res = io_set_freq(FTDI_TCK_DEFAULT_FREQ);
+    if (frequency == 0) {
+	frequency = FTDI_TCK_DEFAULT_FREQ;
+    }
+    
+    res = io_set_freq(frequency);
     if (res < 0)
     {
         fprintf(stderr, "io_set_frequency %d\n", res);
@@ -831,7 +873,7 @@ int io_scan(const unsigned char *TMS, const unsigned char *TDI, unsigned char *T
 	    // we just received.
 	    res = io_transfer_mpsse(cmdbuf, cmdBytes, rxBytes, &TDO);
 	    if (res != rxBytes) {
-		fprintf(stderr, "Error transferring data with FTDI: %d (%s)\n", res, ftdi_get_error_string(&ftdi));
+		fprintf(stderr, "Error transferring data with FTDI\n");
 		return -1;
 	    }
 
@@ -857,7 +899,7 @@ int io_scan(const unsigned char *TMS, const unsigned char *TDI, unsigned char *T
 	// handle the remaining command bytes
 	res = io_transfer_mpsse(cmdbuf, cmdBytes, rxBytes, &TDO);
 	if (res != rxBytes) {
-	    fprintf(stderr, "Error transferring data with FTDI: %d (%s)\n", res, ftdi_get_error_string(&ftdi));
+	    fprintf(stderr, "Error transferring data with FTDI\n");
 	    return -1;
 	}
     }
