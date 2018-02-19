@@ -1,7 +1,4 @@
-xvcd_bb
 bin
-src/io_ftdi_ORIG.c
 src/obj/
-src/xvcd
-src/xvcd_ORIG.c
-src/io_ftdi_mpsse.c~
+src/xvcdbb
+src/xvcdmp

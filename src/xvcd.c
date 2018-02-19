@@ -546,7 +546,6 @@ int main(int argc, char **argv)
             }
         }
     }
-    //@@@munmap((void *) ptr, MAP_SIZE);
         
     //
     // Un-map IOs.

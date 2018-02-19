@@ -22,8 +22,8 @@
 #define FTDI_MAX_WRITESIZE 256
 #endif
 
-//@@@#define FTDI_BAUDRATE (750000)  /* Have not measured this, yet */
-#define FTDI_BAUDRATE (50000)  /* Measured to be a 2MHz TCK frequency */
+#define FTDI_BAUDRATE (750000)  /* Have not measured this, yet */
+//#define FTDI_BAUDRATE (50000)  /* Measured to be a 2MHz TCK frequency */
 
 struct ftdi_context ftdi;
 
