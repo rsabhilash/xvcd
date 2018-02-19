@@ -82,7 +82,7 @@ struct fifo_size
     unsigned int rx;
 };
 
-    
+
 static struct ftdi_context ftdi;
 static int vlevel = 0;
 
@@ -132,7 +132,7 @@ struct fifo_size io_get_fifo_sizes (struct ftdi_context *ftdi)
     // # values are defined from the device perspective
 
     struct fifo_size fifo;
-    
+
     switch(ftdi->type) {
     case TYPE_2232C: fifo.tx = 384; fifo.rx = 128; break;   // BCD Device: 0x0500  # TX: 384, RX: 128
     case TYPE_R:     fifo.tx = 128; fifo.rx = 256; break;   // BCD Device: 0x0600  # TX: 128, RX: 256
@@ -159,7 +159,7 @@ int io_read_data (unsigned char *buffer, unsigned int len)
     int i = 0;
     int timeout = 20;
     int res;
-        
+
     while ((i < len) && timeout > 0)
     {
         res = ftdi_read_data(&ftdi, buffer + i, len - i);
@@ -169,7 +169,7 @@ int io_read_data (unsigned char *buffer, unsigned int len)
             fprintf(stderr, "ftdi_read_data %d (%s)\n", res, ftdi_get_error_string(&ftdi));
             return res;
         }
-                
+
         i += res;
 	timeout--;
     }
@@ -177,7 +177,7 @@ int io_read_data (unsigned char *buffer, unsigned int len)
     if (vlevel > 3 && timeout <= 0) {
 	fprintf(stderr, "ftdi_read_data Timeout! (may be okay)\n");
     }
-    
+
     return i;
 }
 
@@ -200,7 +200,7 @@ int io_transfer_mpsse(unsigned char *cmdp, int cmdBytes, int rxBytes, unsigned c
     unsigned int bits;
     unsigned int bi;		/* bit index */
     int res;
-    
+
     // Make sure do not blow the rxbuf buffer - should be sized to
     // avoid this but notify in case that is not the case.
     if (rxBytes > sizeof(rxbuf)) {
@@ -236,7 +236,7 @@ int io_transfer_mpsse(unsigned char *cmdp, int cmdBytes, int rxBytes, unsigned c
 	// TDO bit stream. Use the command buffer to know how to handle
 	// the received data.
 	//
-    
+
 	// First double check that all commands are lsb so we can just
 	// assume to process as lsb. If find a MSB command, tell the
 	// user/programmer to fix the code. Bit 3 is a '1' for lsb and a
@@ -244,7 +244,7 @@ int io_transfer_mpsse(unsigned char *cmdp, int cmdBytes, int rxBytes, unsigned c
 	if ((*cmdp & 0x08) == 0) {
 	    fprintf(stderr, "io_transfer_mpsse(): MSB command used. Will process incorrectly as if LSB! Fix your code!\n");
 	}
-    
+
 	// Next check if bit transfer or byte transfer. Bit 1 of the
 	// command opcode is a '1' if a bit command and a '0' if a byte
 	// command.
@@ -287,11 +287,11 @@ int io_transfer_mpsse(unsigned char *cmdp, int cmdBytes, int rxBytes, unsigned c
     }
 
     if (bi != 0) {
-	// Before leave, make sure all partial bits in bits have been sent to TDO. 
+	// Before leave, make sure all partial bits in bits have been sent to TDO.
 	**TDOpp = bits & 0x00ff;
 	(*TDOpp)++;
     }
-    
+
     // Check that did not process more bytes than should have so can catch the bug.
     if ((rxp - rxbuf) > rxBytes) {
 	fprintf(stderr, "io_transfer_mpsse(): Processed TOO MANY bytes!\n");
@@ -331,9 +331,9 @@ int io_build_cmd_bits(const unsigned char *TMSp, const unsigned char *TDIp, int 
 
     // Make sure bits will not be more than 8
     bits = (bits > 8) ? 8 : bits;
-    	
-    if (vlevel > 3) printf("11: bits: %d  TMS: 0x%02x  TDI: 0x%02x\n", bits, TMS, TDI); 		    
-	
+
+    if (vlevel > 3) printf("11: bits: %d  TMS: 0x%02x  TDI: 0x%02x\n", bits, TMS, TDI);
+
     while (bits > 0) {
 	i = 1;		/* reset i to 1 at the start of each loop */
 	if (TMS & 0x01) {
@@ -348,8 +348,8 @@ int io_build_cmd_bits(const unsigned char *TMSp, const unsigned char *TDIp, int 
 	    // TMS command can only send 7 bits, so stop search if i == 7
 	    while (((bits-i) > 0) && (i < 7) &&
 		   ((TDI & BITMASK(i+1)) == 0 || (TDI & BITMASK(i+1)) == BITMASK(i+1))) {
-		if (vlevel > 3) printf("15: i: %d   BITMASK(i+1): 0x%02x  TDI & BITMASK(i+1): 0x%02x\n", i, BITMASK(i+1), TDI & BITMASK(i+1)); 		    
-		i++;			    
+		if (vlevel > 3) printf("15: i: %d   BITMASK(i+1): 0x%02x  TDI & BITMASK(i+1): 0x%02x\n", i, BITMASK(i+1), TDI & BITMASK(i+1));
+		i++;
 	    }
 	    // TMS is all 1's, so send TMS command with a single TDI that remains in this stat during TMS's
 	    *cmdp++ = RW_BITS_TMS_PVE_NVE; /* write TDI/TMS on falling TCK, read TDO on rising TCK */
@@ -357,13 +357,13 @@ int io_build_cmd_bits(const unsigned char *TMSp, const unsigned char *TDIp, int 
 	    *cmdp++ = ((TDI & 0x01) << 7) | (TMS & BITMASK(i));
 	    *cmdszp += 3;
 	    *rxszp += 1;		/* expect 1 byte to be read in response to this command */
-	    if (vlevel > 3) printf("12: cmd: 0x%02x%02x%02x cmdsz: %d rxsz: %d\n", *(cmdp-3), *(cmdp-2), *(cmdp-1), *cmdszp, *rxszp); 		    
+	    if (vlevel > 3) printf("12: cmd: 0x%02x%02x%02x cmdsz: %d rxsz: %d\n", *(cmdp-3), *(cmdp-2), *(cmdp-1), *cmdszp, *rxszp);
 	} else {
 	    // lsb of TMS is '0', so send a TDI command for bit stream where TMS is '0'
 	    //
 	    // although bits should not be > 8, stop search if i == 8
 	    while (((bits-i) > 0) && (i < 8) && !(TMS & BITMASK(i+1))) {
-		i++;			    
+		i++;
 	    }
 	    // Section of TMS is all 0's, so send TDI bits
 	    *cmdp++ = RW_BITS_PVE_NVE_LSB; /* write TDI/TMS on falling TCK, read TDO on rising TCK */
@@ -371,15 +371,15 @@ int io_build_cmd_bits(const unsigned char *TMSp, const unsigned char *TDIp, int 
 	    *cmdp++ = TDI & BITMASK(i);
 	    *cmdszp += 3;
 	    *rxszp += 1;		/* expect 1 byte to be read in response to this command */
-	    if (vlevel > 3) printf("13: cmd: 0x%02x%02x%02x cmdsz: %d rxsz: %d\n", *(cmdp-3), *(cmdp-2), *(cmdp-1), *cmdszp, *rxszp); 		    
+	    if (vlevel > 3) printf("13: cmd: 0x%02x%02x%02x cmdsz: %d rxsz: %d\n", *(cmdp-3), *(cmdp-2), *(cmdp-1), *cmdszp, *rxszp);
 	}
 
 	// advance bitsUsed, bits, TMS & TDI
 	bitsUsed += i;
 	bits -= i;
 	TMS >>= i;
-	TDI >>= i;		
-	if (vlevel > 3) printf("14: bits: %d  TMS: 0x%02x  TDI: 0x%02x\n", bits, TMS, TDI); 		    
+	TDI >>= i;
+	if (vlevel > 3) printf("14: bits: %d  TMS: 0x%02x  TDI: 0x%02x\n", bits, TMS, TDI);
     }
 
     return bitsUsed;
@@ -405,10 +405,10 @@ int io_build_cmd_bytes(const unsigned char *TMSp, const unsigned char *TDIp, int
     // Initialize return values
     *cmdszp = 0;
     *rxszp = 0;
-    
 
-    if (vlevel > 3) printf("111: bits: %d  TMS[0]: 0x%02x  TDI[0]: 0x%02x\n", bits, *TMSp, *TDIp); 		    
-	
+
+    if (vlevel > 3) printf("111: bits: %d  TMS[0]: 0x%02x  TDI[0]: 0x%02x\n", bits, *TMSp, *TDIp);
+
 
     // Search through TMS to find out how many bytes we can send
     // before TMS is no longer all 0's. i will be the number of bytes
@@ -416,9 +416,9 @@ int io_build_cmd_bytes(const unsigned char *TMSp, const unsigned char *TDIp, int
     //
     // Make sure do not build a command that cannot completely fit in
     // the Write FIFO (TX).
-    i = 0; 
+    i = 0;
     while ((i < bytes) && (i < (fifo_sz.tx-3)) && !(*TMSp++)) {
-	i++;			    
+	i++;
     }
 
     if (i > 0) {
@@ -431,7 +431,7 @@ int io_build_cmd_bytes(const unsigned char *TMSp, const unsigned char *TDIp, int
 	cmdp += i;
 	*cmdszp = 3+i;
 	*rxszp = i;		         /* expect i byte to be read in response to this command */
-	if (vlevel > 3) printf("113: cmd: 0x%02x%02x%02x%02x... cmdsz: %d rxsz: %d\n", *(cmdp-3-i), *(cmdp-2-i), *(cmdp-1-i), *(cmdp-i), *cmdszp, *rxszp); 		    
+	if (vlevel > 3) printf("113: cmd: 0x%02x%02x%02x%02x... cmdsz: %d rxsz: %d\n", *(cmdp-3-i), *(cmdp-2-i), *(cmdp-1-i), *(cmdp-i), *cmdszp, *rxszp);
     }
 
     // return number of bits processed from TMSp and TDIp
@@ -458,7 +458,7 @@ int io_set_freq(unsigned int frequency)
 	fprintf(stderr, "Unsupported frequency: %u Hz. Capping to: %u Hz\n", frequency, max_freq);
 	frequency = max_freq;
     }
-    
+
     if (frequency <= BUS_CLOCK_BASE) {
 	divcode = EN_DIV_5;
 	divisor = ((BUS_CLOCK_BASE+frequency-1)/frequency)-1;
@@ -505,7 +505,7 @@ int io_set_freq(unsigned int frequency)
         fprintf(stderr, "Invalid FTDI MPSSE command at %d\n",buf[1]);
 	return -253;
     }
-    
+
     res = ftdi_usb_purge_rx_buffer(&ftdi);
     if (res < 0)
     {
@@ -532,7 +532,7 @@ int io_set_period(unsigned int period)
 	// If no error in setting frequency, convert it back to a period in ns.
 	actPeriod = 1000000000 / actPeriod;
     }
-    
+
     return  actPeriod;
 }
 
@@ -568,7 +568,7 @@ int io_init(int vendor, int product, const char* serial, unsigned int index, uns
     unsigned char buf[16];
     int res, len;
     struct fifo_size fifo_sz;
-    
+
     if (product < 0)
         product = 0x6010;
     if (vendor < 0)
@@ -576,15 +576,15 @@ int io_init(int vendor, int product, const char* serial, unsigned int index, uns
 
     // Save verbosity level
     vlevel = verbosity;
-    
+
     res = ftdi_init(&ftdi);
-        
+
     if (res < 0)
     {
         fprintf(stderr, "ftdi_init: %d (%s)\n", res, ftdi_get_error_string(&ftdi));
         return 1;
     }
-    
+
     {
 	enum ftdi_interface selected_interface;
 	// Select interface - must be done before ftdi_usb_open
@@ -593,13 +593,13 @@ int io_init(int vendor, int product, const char* serial, unsigned int index, uns
 	case 1: selected_interface = INTERFACE_B; break;
 	case 2: selected_interface = INTERFACE_C; break;
 	case 3: selected_interface = INTERFACE_D; break;
-	default: selected_interface = INTERFACE_ANY; break;	
+	default: selected_interface = INTERFACE_ANY; break;
 	}
 
 	if (interface != 0 && interface != 1) {
 	    printf("WARNING: This device may not have a MPSSE on interface %d!\n         Pick another interface if get errors.\n\n", interface);
 	}
-    
+
 	res = ftdi_set_interface(&ftdi, selected_interface);
 	if (res < 0) {
 	    fprintf(stderr, "ftdi_set_interface(%d): %d (%s)\n", interface, res, ftdi_get_error_string(&ftdi));
@@ -609,9 +609,9 @@ int io_init(int vendor, int product, const char* serial, unsigned int index, uns
     }
 
     if (serial != NULL) index = 0; /* ignore index if serial is given */
-    
+
     res = ftdi_usb_open_desc_index(&ftdi, vendor, product, NULL, serial, index);
-        
+
     if (res < 0)
     {
         fprintf(stderr, "ftdi_usb_open(0x%04x, 0x%04x): %d (%s)\n", vendor, product, res, ftdi_get_error_string(&ftdi));
@@ -625,7 +625,7 @@ int io_init(int vendor, int product, const char* serial, unsigned int index, uns
 	} else {
 	    printf("Opened FTDI 0x%04x:0x%04x, serial=%s, interface: %d, type=", vendor, product, serial, interface);
 	}
-	
+
 	switch(ftdi.type) {
 	case TYPE_AM: printf("AM"); break;
 	case TYPE_BM: printf("BM"); break;
@@ -646,7 +646,7 @@ int io_init(int vendor, int product, const char* serial, unsigned int index, uns
 
     // Get the expected FIFO Siz of this FTDI device
     fifo_sz = io_get_fifo_sizes(&ftdi);
-    
+
     //NOTE: Not sure if this is needed, but it seems like a good idea
     res = ftdi_usb_reset(&ftdi);
     if (res < 0) {
@@ -655,18 +655,18 @@ int io_init(int vendor, int product, const char* serial, unsigned int index, uns
         return 1;
     }
 
-    // THIS IS VERY IMPORTANT for fast JTAG accesses. If do not change
-    // this, can go from 22 second program times to 75 second program
-    // times. However, it might impact how well the host system works
-    // so use with care. If find the host fails to handle other USB
-    // device, increase this number.
+    // THIS IS VERY IMPORTANT for fast JTAG accesses. It speeds up
+    // JTAG programming roughly 3 times over the default latency timer
+    // setting. However, it might impact how well the host system
+    // works, so use with care. If find the host fails to handle other
+    // USB devices, increase this number or comment it out completely.
     res = ftdi_set_latency_timer(&ftdi, 4);
     if (res < 0) {
 	fprintf(stderr, "Unable to set latency timer: %d (%s).\n", res, ftdi_get_error_string(&ftdi));
         io_close();
         return 1;
     }
-    
+
     // Set the write chunk size to the full TX FIFO size. Not
     // completely sure, but believe this is the most efficient way of
     // handling MPSSE commands.
@@ -676,7 +676,7 @@ int io_init(int vendor, int product, const char* serial, unsigned int index, uns
         io_close();
         return 1;
     }
-    
+
     // Set the read chunk size to the full RX FIFO size. Not
     // completely sure, but believe this is the most efficient way of
     // handling MPSSE commands.
@@ -687,31 +687,31 @@ int io_init(int vendor, int product, const char* serial, unsigned int index, uns
         return 1;
     }
 
-#if 0    
+#if 0
     // RESET FTDI - seems to cause more harm (I/Os reset) than good, so skip.
     res = ftdi_set_bitmode(&ftdi, IO_OUTPUT, BITMODE_RESET);
 
-    if (res < 0) 
+    if (res < 0)
     {
         fprintf(stderr, "ftdi_set_bitmode: %d (%s)\n", res, ftdi_get_error_string(&ftdi));
         io_close();
         return 1;
     }
 #endif
-    
+
     // Set the USB read and write timeouts (not sure if this really
     // helps but does not seem to hurt)
     ftdi.usb_read_timeout = 120000;
     ftdi.usb_write_timeout = 120000;
 
-    res = ftdi_usb_purge_buffers(&ftdi);        
+    res = ftdi_usb_purge_buffers(&ftdi);
     if (res < 0)
     {
         fprintf(stderr, "ftdi_usb_purge_buffers %d (%s)\n", res, ftdi_get_error_string(&ftdi));
         io_close();
         return 1;
     }
-        
+
     // Disable event and error characters
     //
     // NOTE: Not sure if this is really needed but does not seem to hurt.
@@ -721,7 +721,7 @@ int io_init(int vendor, int product, const char* serial, unsigned int index, uns
         fprintf(stderr, "ftdi_set_event_char %d (%s)\n", res, ftdi_get_error_string(&ftdi));
         io_close();
         return 1;
-    }        
+    }
     res = ftdi_set_error_char(&ftdi, 0, 0);
     if (res < 0)
     {
@@ -729,11 +729,11 @@ int io_init(int vendor, int product, const char* serial, unsigned int index, uns
         io_close();
         return 1;
     }
-    
+
     // Enable MPSSE mode
     res = ftdi_set_bitmode(&ftdi, IO_OUTPUT, BITMODE_MPSSE);
 
-    if (res < 0) 
+    if (res < 0)
     {
         fprintf(stderr, "ftdi_set_bitmode: %d (%s)\n", res, ftdi_get_error_string(&ftdi));
         io_close();
@@ -741,7 +741,7 @@ int io_init(int vendor, int product, const char* serial, unsigned int index, uns
     }
 
 
-    res = ftdi_usb_purge_buffers(&ftdi);        
+    res = ftdi_usb_purge_buffers(&ftdi);
     if (res < 0)
     {
         fprintf(stderr, "ftdi_usb_purge_buffers %d (%s)\n", res, ftdi_get_error_string(&ftdi));
@@ -752,7 +752,7 @@ int io_init(int vendor, int product, const char* serial, unsigned int index, uns
     if (frequency == 0) {
 	frequency = FTDI_TCK_DEFAULT_FREQ;
     }
-    
+
     res = io_set_freq(frequency);
     if (res < 0)
     {
@@ -774,7 +774,7 @@ int io_init(int vendor, int product, const char* serial, unsigned int index, uns
         io_close();
         return 1;
     }
-    
+
     // Disable loopback mode
     buf[0] = LOOPBACK_END;
     len = 1;
@@ -820,7 +820,7 @@ int io_scan(const unsigned char *TMS, const unsigned char *TDI, unsigned char *T
 
     int res;
     int cmdBytes = 0, rxBytes = 0, bitsUsed=0;
-    
+
     if (vlevel > 3) printf("io_scan() of %d bits\n", bits);
 
     cmdp = cmdbuf;
@@ -864,8 +864,8 @@ int io_scan(const unsigned char *TMS, const unsigned char *TDI, unsigned char *T
 	// check that did not overflow cmdbuf array
 	if ((cmdBytes + cmdsz) > FTDI_WRITE_BUFFER_SIZE) {
 	    fprintf(stderr, "io_scan(): cmdbuf OVERFLOW! cmdbuf is now %d bytes. Fix code to prevent this from happening!\n", (cmdBytes + cmdsz));
-	}        	
-	
+	}
+
 	if ((cmdBytes + cmdsz) > fifo_sz.tx) {
 	    // cannot fit in the new commands without exceeding
 	    // FTDI FIFO Write Size, so send on cmdbuf and then
@@ -908,7 +908,7 @@ int io_scan(const unsigned char *TMS, const unsigned char *TDI, unsigned char *T
     if ((TDO - TDOstart) > numTDOBytes) {
 	fprintf(stderr, "io_scan(): wrote too many bytes into TDO! Exp.: %d  Act. %d\n", numTDOBytes, (TDO - TDOstart));
     }
-        
+
     return 0;
 }
 

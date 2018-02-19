@@ -11,11 +11,28 @@ platform. You can use the (much slower) non-async version instead."
 
 For MPSSE mode, which can be faster than bitbang mode, the output
 executable is called "xvcdmp". As a comparison, for a Xilinx Zync
-XCXC7Z020 and using Vivado, a program sesstion can take about 2
-minutes through bitbang_mode and only about 25 seconds with MPSSE
-mode. Have tested this with both a FT2232H and a FT4232H. Both MPSSE
-ports of either of these devices can be used by selecting it through
-the -i option.
+XCXC7Z020 and using Vivado 2017.4, programming the Zynq FPGA logic
+directly can take about 35 seconds through bitbang_mode and about
+27 seconds with MPSSE mode. Have tested this with both a FT2232H and a
+FT4232H. Both MPSSE ports of either of these devices can be used by
+selecting it through the -i option.
+
+If having trouble connecting, try forcing the frequency lower with the
+-f option. However, this is only used by the MPSSE mode version.
+
+If use the -i option to select a different interface on a multiple
+interface device like the FT2232H and FT4232H, keep in mind that for
+MPSSE mode, only interface 0 & 1 have MPSSE engines and you will get
+an error if try to select interface 2 or 3. However, for bitbang mode,
+can use all 4 interfaces.
+
+One key to speeding up both the bitbang and MPSSE modes is setting the
+USB latency timer setting lower in io_init(). However, this may have a
+detrimental impact on the host system. If the host is a Raspberry Pi,
+which this was tested on, it seems fine. If the host is a PC with lots
+of USB devices, you may need to increase the latency timer value or
+comment out the call to ftdi_set_latency_timer() entirely from
+io_init().
 
 Also, the base server code was merged with
 https://github.com/Xilinx/XilinxVirtualCable/blob/master/XAPP1251/src/xvcServer.c

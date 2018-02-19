@@ -407,7 +407,7 @@ int main(int argc, char **argv)
 	    fprintf(stderr, "          -I: USB index, use to select the desired FTDI device if multiple devices with same vendor\n");
 	    fprintf(stderr, "              and product IDs on host. Can be used instead of -S but -S is more definitive. (default = 0)\n");
 	    fprintf(stderr, "          -i: interface, select which \'port\' on the selected device to use if multiple port device. (default = 0)\n");
-	    fprintf(stderr, "          -f: frequency in Hz, force TCK frequency. Otherwise, will set from settck: commands sent by client. (default = 0)\n");
+	    fprintf(stderr, "          -f: frequency in Hz, force TCK frequency. If set to 0, set from settck commands sent by client. (default = 0)\n");
 	    fprintf(stderr, "          -p: TCP port, TCP port to listen for connections from client (default = %d)\n\n", port);
             return 1;
         }
@@ -503,7 +503,7 @@ int main(int argc, char **argv)
                     if (newfd < 0) {
                         perror("accept");
                     } else {
-                        printf("setting TCP_NODELAY to 1\n");
+                        if (vlevel > 0) printf("setting TCP_NODELAY to 1\n");
                         int flag = 1;
                         int optResult = setsockopt(newfd,
                                                    IPPROTO_TCP,
