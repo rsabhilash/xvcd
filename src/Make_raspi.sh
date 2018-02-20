@@ -11,6 +11,10 @@
 # sudo apt-get install libusb-1.0-0
 # sudo apt-get install libftdi1-dev
 #
+# IMPORTANT: If the USB accesses seem slow (should be about 30 seconds
+# to program a ZYNC 020). May need to build libusb and libftdi from
+# source. If so, see Make_slc6.sh for details.
+#
 # NOTE: Once have the executables built and running, may need to use
 # the "-f" option to lower the frequency that Vivado picks.
 
