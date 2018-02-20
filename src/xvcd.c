@@ -3,7 +3,7 @@
 #include <unistd.h>
 #include <string.h>
 #include <time.h>
-  
+
 #include <sys/types.h>
 #include <sys/socket.h>
 #include <netinet/tcp.h>
@@ -118,24 +118,24 @@ long int getInternalAddress(char* interface, sa_family_t ipVersion)
 
     if (getifaddrs(&ifaddrHead) != 0)
     {
-	fprintf(stderr, "ifaddrs error");
+        fprintf(stderr, "ifaddrs error");
     }
 
     /* iterate through address list */
     for (ifaddr = ifaddrHead, n = 0; ifaddr != NULL; ifaddr = ifaddr->ifa_next, n++)
     {
-	family = ifaddr->ifa_addr->sa_family;
-	interfaceName = ifaddr->ifa_name;
+        family = ifaddr->ifa_addr->sa_family;
+        interfaceName = ifaddr->ifa_name;
 
-	if (!family || family != ipVersion || strcmp(interfaceName, interface)) continue;
+        if (!family || family != ipVersion || strcmp(interfaceName, interface)) continue;
 
-	struct sockaddr *addr = ifaddr->ifa_addr;
-	struct sockaddr_in* addr_in = (struct sockaddr_in*) addr;
-	long int address = addr_in->sin_addr.s_addr;
+        struct sockaddr *addr = ifaddr->ifa_addr;
+        struct sockaddr_in* addr_in = (struct sockaddr_in*) addr;
+        long int address = addr_in->sin_addr.s_addr;
 
-	freeifaddrs(ifaddrHead);
+        freeifaddrs(ifaddrHead);
 
-	return address;
+        return address;
     }
 
     freeifaddrs(ifaddrHead);
@@ -150,18 +150,18 @@ char *getHostIP(void)
     char *host = hostMsg;
 
 #ifdef USE_GETIFADDRS
-    static char hostIPstr[4*4];	/* big enough to hold address string */
+    static char hostIPstr[4*4]; /* big enough to hold address string */
     long int address = getInternalAddress((char*) &USE_GETIFADDRS, AF_INET);
 
     snprintf(hostIPstr, 4*4, "%u.%u.%u.%u",
-	     (unsigned int) (address>> 0)&0x0ff,
-	     (unsigned int) (address>> 8)&0x0ff,
-	     (unsigned int) (address>>16)&0x0ff,
-	     (unsigned int) (address>>24)&0x0ff);
+             (unsigned int) (address>> 0)&0x0ff,
+             (unsigned int) (address>> 8)&0x0ff,
+             (unsigned int) (address>>16)&0x0ff,
+             (unsigned int) (address>>24)&0x0ff);
     host = hostIPstr;
     //printf("IP Address: %s\n", host);
 #endif
-    
+
     return host;
 }
 
@@ -191,9 +191,9 @@ int handle_data(int fd, unsigned long frequency)
 
     int i;
     int seen_tlr = 0;
-        
-    const char xvcInfo[] = "xvcServer_v1.0:" TOSTRING(VECTOR_IN_SZ) "\n"; 
-        
+
+    const char xvcInfo[] = "xvcServer_v1.0:" TOSTRING(VECTOR_IN_SZ) "\n";
+
     do {
         char cmd[16];
         unsigned char buffer[VECTOR_IN_SZ], result[VECTOR_IN_SZ/2];
@@ -218,26 +218,26 @@ int handle_data(int fd, unsigned long frequency)
         } else if (memcmp(cmd, "se", 2) == 0) {
             if (sread(fd, cmd, 9) != 1)
                 return 1;
-	    // Convert the 4-byte little endian integer after "settck:" to be an integer
-	    int32_t period, actPeriod;
+            // Convert the 4-byte little endian integer after "settck:" to be an integer
+            int32_t period, actPeriod;
 
-	    // if frequency argument is non-0, use it instead of the
-	    // period from the settck: command
-	    if (frequency == 0) {
-		period = getInt32((unsigned char*)cmd+5);
-	    } else {
-		period = 1000000000 / frequency;
-	    }
+            // if frequency argument is non-0, use it instead of the
+            // period from the settck: command
+            if (frequency == 0) {
+                period = getInt32((unsigned char*)cmd+5);
+            } else {
+                period = 1000000000 / frequency;
+            }
 
-	    actPeriod = io_set_period((unsigned int)period);
+            actPeriod = io_set_period((unsigned int)period);
 
-	    if (actPeriod < 0) {
-		fprintf(stderr, "Error while setting the JTAG TCK period\n");
-		actPeriod = period; /* on error, simply echo back the period value so client while not try to change it*/
-	    }
-	    
-	    putInt32(result, actPeriod);
-	    
+            if (actPeriod < 0) {
+                fprintf(stderr, "Error while setting the JTAG TCK period\n");
+                actPeriod = period; /* on error, simply echo back the period value so client while not try to change it*/
+            }
+
+            putInt32(result, actPeriod);
+
             if (write(fd, result, 4) != 4) {
                 perror("write");
                 return 1;
@@ -265,14 +265,14 @@ int handle_data(int fd, unsigned long frequency)
         }
 
         int32_t len;
-	len = getInt32((unsigned char*)cmd+6);
-	
+        len = getInt32((unsigned char*)cmd+6);
+
         int nr_bytes = (len + 7) / 8;
         if (nr_bytes * 2 > sizeof(buffer)) {
             fprintf(stderr, "buffer size exceeded\n");
             return 1;
         }
-                
+
         if (sread(fd, buffer, nr_bytes * 2) != 1) {
             fprintf(stderr, "reading data failed\n");
             return 1;
@@ -284,17 +284,17 @@ int handle_data(int fd, unsigned long frequency)
             printf("\tNumber of Bits  : %d\n", len);
             printf("\tNumber of Bytes : %d \n", nr_bytes);
 
-	    if (vlevel > 3) {
-		int i;		
-		printf("TMS#");
-		for (i = 0; i < nr_bytes; ++i)
-		    printf("%02x ", buffer[i]);
-		printf("\n");
-		printf("TDI#");
-		for (; i < nr_bytes * 2; ++i)
-		    printf("%02x ", buffer[i]);
-		printf("\n");
-	    }
+            if (vlevel > 3) {
+                int i;
+                printf("TMS#");
+                for (i = 0; i < nr_bytes; ++i)
+                    printf("%02x ", buffer[i]);
+                printf("\n");
+                printf("TDI#");
+                for (; i < nr_bytes * 2; ++i)
+                    printf("%02x ", buffer[i]);
+                printf("\n");
+            }
         }
 
         //
@@ -304,14 +304,14 @@ int handle_data(int fd, unsigned long frequency)
         // allowed as this will change DR/IR.
         //
         seen_tlr = (seen_tlr || jtag_state == test_logic_reset) && (jtag_state != capture_dr) && (jtag_state != capture_ir);
-                
-                
+
+
         //
         // Due to a weird bug(??) xilinx impacts goes through another "capture_ir"/"capture_dr" cycle after
         // reading IR/DR which unfortunately sets IR to the read-out IR value.
         // Just ignore these transactions.
         //
-                
+
         if ((jtag_state == exit1_ir && len == 5 && buffer[0] == 0x17) || (jtag_state == exit1_dr && len == 4 && buffer[0] == 0x0b))
         {
             if (vlevel > 0)
@@ -323,7 +323,7 @@ int handle_data(int fd, unsigned long frequency)
                 //
                 // Do the actual cycle.
                 //
-                                
+
                 int tms = !!(buffer[i/8] & (1<<(i&7)));
                 //
                 // Track the state.
@@ -336,21 +336,21 @@ int handle_data(int fd, unsigned long frequency)
                 exit(1);
             }
 
-	    if (vlevel > 3) {
-		int i;		
-		printf("TDO#");
-		for (i = 0; i < nr_bytes; ++i)
-		    printf("%02x ", result[i]);
-		printf("\n");
-	    }
-	    
+            if (vlevel > 3) {
+                int i;
+                printf("TDO#");
+                for (i = 0; i < nr_bytes; ++i)
+                    printf("%02x ", result[i]);
+                printf("\n");
+            }
+
         }
 
         if (write(fd, result, nr_bytes) != nr_bytes) {
             perror("write");
             return 1;
         }
-                
+
         if (vlevel > 1)
         {
             printf("jtag state %d\n", jtag_state);
@@ -369,9 +369,9 @@ int main(int argc, char **argv)
     unsigned long frequency = 0;
     char * serial = NULL;
     struct sockaddr_in address;
-        
+
     opterr = 0;
-        
+
     while ((c = getopt(argc, argv, "vV:P:S:I:i:p:f:")) != -1)
         switch (c)
         {
@@ -393,113 +393,113 @@ int main(int argc, char **argv)
         case 'i':
             interface = strtoul(optarg, NULL, 0);
             break;
-	case 'v':
-	    vlevel++;
-	    //printf ("verbosity level is %d\n", vlevel);
-	    break;
+        case 'v':
+            vlevel++;
+            //printf ("verbosity level is %d\n", vlevel);
+            break;
         case 'f':
             frequency = strtoul(optarg, NULL, 0);
             break;
-	case '?':
+        case '?':
             fprintf(stderr, "usage: %s [-v] [-V vendor] [-P product] [-S serial] [-I index] [-i interface] [-f frequency] [-p port]\n\n", *argv);
-	    fprintf(stderr, "          -v: verbosity, increase verbosity by adding more v's\n");
-	    fprintf(stderr, "          -V: vendor ID, use to select the desired FTDI device if multiple on host. (default = 0x0403)\n");
-	    fprintf(stderr, "          -P: product ID, use to select the desired FTDI device if multiple on host. (default = 0x6010)\n");
-	    fprintf(stderr, "          -S: serial number, use to select the desired FTDI device if multiple devices with same vendor\n");
-	    fprintf(stderr, "              and product IDs on host. \'lsusb -v\' can be used to find the serial numbers.\n");
-	    fprintf(stderr, "          -I: USB index, use to select the desired FTDI device if multiple devices with same vendor\n");
-	    fprintf(stderr, "              and product IDs on host. Can be used instead of -S but -S is more definitive. (default = 0)\n");
-	    fprintf(stderr, "          -i: interface, select which \'port\' on the selected device to use if multiple port device. (default = 0)\n");
-	    fprintf(stderr, "          -f: frequency in Hz, force TCK frequency. If set to 0, set from settck commands sent by client. (default = 0)\n");
-	    fprintf(stderr, "          -p: TCP port, TCP port to listen for connections from client (default = %d)\n\n", port);
+            fprintf(stderr, "          -v: verbosity, increase verbosity by adding more v's\n");
+            fprintf(stderr, "          -V: vendor ID, use to select the desired FTDI device if multiple on host. (default = 0x0403)\n");
+            fprintf(stderr, "          -P: product ID, use to select the desired FTDI device if multiple on host. (default = 0x6010)\n");
+            fprintf(stderr, "          -S: serial number, use to select the desired FTDI device if multiple devices with same vendor\n");
+            fprintf(stderr, "              and product IDs on host. \'lsusb -v\' can be used to find the serial numbers.\n");
+            fprintf(stderr, "          -I: USB index, use to select the desired FTDI device if multiple devices with same vendor\n");
+            fprintf(stderr, "              and product IDs on host. Can be used instead of -S but -S is more definitive. (default = 0)\n");
+            fprintf(stderr, "          -i: interface, select which \'port\' on the selected device to use if multiple port device. (default = 0)\n");
+            fprintf(stderr, "          -f: frequency in Hz, force TCK frequency. If set to 0, set from settck commands sent by client. (default = 0)\n");
+            fprintf(stderr, "          -p: TCP port, TCP port to listen for connections from client (default = %d)\n\n", port);
             return 1;
         }
 
     if (vlevel > 0) {
-	printf ("verbosity level is %d\n", vlevel);
+        printf ("verbosity level is %d\n", vlevel);
     }
 
     if (vlevel > 0) {
-	// Print a helpful message indicating how to use the XVCD server.
-	char *host = getHostIP();
-	
-	printf("\nStarting XVCD server. In the relevant tool, use the following cable plugin command:\n\n");
-	printf("If ISE iMPACT, Open Cable Plug-in with:\n");
-	printf("    xilinx_xvc host=%s:%d disableversioncheck=true\n\n", host, port);
-	printf("If Vivado, in the Tcl Console of the Hardware Manager:\n");
-	printf( "    connect_hw_server\n");
-	printf("    open_hw_target -xvc_url %s:%d\n\n", host, port);
-	printf("You should be able to use the relevant tool normally.\n\n");
+        // Print a helpful message indicating how to use the XVCD server.
+        char *host = getHostIP();
+
+        printf("\nStarting XVCD server. In the relevant tool, use the following cable plugin command:\n\n");
+        printf("If ISE iMPACT, Open Cable Plug-in with:\n");
+        printf("    xilinx_xvc host=%s:%d disableversioncheck=true\n\n", host, port);
+        printf("If Vivado, in the Tcl Console of the Hardware Manager:\n");
+        printf( "    connect_hw_server\n");
+        printf("    open_hw_target -xvc_url %s:%d\n\n", host, port);
+        printf("You should be able to use the relevant tool normally.\n\n");
     }
-    
+
     if (io_init(vendor, product, serial, index, interface, frequency, vlevel))
     {
         fprintf(stderr, "io_init failed\n");
         return 1;
     }
-        
+
     //
     // Listen on port 2542.
     //
-        
+
     s = socket(AF_INET, SOCK_STREAM, 0);
-        
+
     if (s < 0) {
         perror("socket");
         return 1;
     }
-        
+
     i = 1;
     setsockopt(s, SOL_SOCKET, SO_REUSEADDR, &i, sizeof i);
-        
+
     address.sin_addr.s_addr = INADDR_ANY;
     address.sin_port = htons(port);
     address.sin_family = AF_INET;
-        
+
     if (bind(s, (struct sockaddr*) &address, sizeof(address)) < 0) {
         perror("bind");
         return 1;
     }
-        
+
     if (listen(s, 0) < 0) {
         perror("listen");
         return 1;
     }
-        
+
     fd_set conn;
     int maxfd = 0;
-        
+
     FD_ZERO(&conn);
     FD_SET(s, &conn);
-        
+
     maxfd = s;
 
     if (vlevel > 0)
         printf("waiting for connection on port %d...\n", port);
-        
+
     while (1) {
         fd_set read = conn, except = conn;
         int fd;
-                
+
         //
         // Look for work to do.
         //
-                
+
         if (select(maxfd + 1, &read, 0, &except, 0) < 0) {
             perror("select");
             break;
         }
-                
+
         for (fd = 0; fd <= maxfd; ++fd) {
             if (FD_ISSET(fd, &read)) {
                 //
                 // Readable listen socket? Accept connection.
                 //
-                                
+
                 if (fd == s) {
                     int newfd;
                     socklen_t nsize = sizeof(address);
-                                        
+
                     newfd = accept(s, (struct sockaddr*)&address, &nsize);
                     //if (vlevel > 0)
                     printf("connection accepted - fd %d\n", newfd);
@@ -529,7 +529,7 @@ int main(int argc, char **argv)
                     //
                     // Close connection when required.
                     //
-                                        
+
                     if (vlevel > 0)
                         printf("connection closed - fd %d\n", fd);
                     close(fd);
@@ -549,11 +549,11 @@ int main(int argc, char **argv)
             }
         }
     }
-        
+
     //
     // Un-map IOs.
     //
     io_close();
-        
+
     return 0;
 }
