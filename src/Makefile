@@ -3,6 +3,7 @@ OBJ ?= $(O)/obj
 
 BUILD_FLAGS=-Werror -Wall -Os
 
+# Can change LATENCY_TIMER value by including it on the make command as: LATENCY_TIMER=12
 ifdef LATENCY_TIMER
    LATENCY=-DLATENCY_TIMER=$(LATENCY_TIMER)
 else
