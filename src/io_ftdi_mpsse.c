@@ -1,6 +1,11 @@
 #include <stdio.h>
-#include <libftdi1/ftdi.h>
 #include <string.h>
+
+#ifdef USE_LIBFTDI1
+#include <libftdi1/ftdi.h>
+#else
+#include <ftdi.h>
+#endif
 
 #include "io_ftdi.h"
 
