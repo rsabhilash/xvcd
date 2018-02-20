@@ -15,6 +15,11 @@
 # to program a ZYNC 020). May need to build libusb and libftdi from
 # source. If so, see Make_slc6.sh for details.
 #
+# Before can use the FTDI device, may need to create a udev entry. See
+# the udev instructions at:
+# http://eblot.github.io/pyftdi/installation.html. Then unplug and
+# plug the FTDI device in to have udev use this added rule.
+#
 # NOTE: Once have the executables built and running, may need to use
 # the "-f" option to lower the frequency that Vivado picks.
 

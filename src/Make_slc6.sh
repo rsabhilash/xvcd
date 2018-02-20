@@ -47,6 +47,15 @@
 # make
 # sudo make install
 #
+# Before can use the FTDI device, may need to create a udev entry. See
+# the udev instructions at:
+# http://eblot.github.io/pyftdi/installation.html. For this slc6
+# system, instead of setting the group to "plugdev", I set it to
+# "dialup", which already existed as a group on this system. Also, I
+# set the filename to 99-libftdi.rules so it was lower priority than
+# existing udev rules for Xilinx and Digilent devices with the same
+# vendor ID of 0x0403. Then unplug and plug the FTDI device in to have
+# udev use this added rule.
 #
 # NOTE: Once have the executables built and running, may need to use
 # the "-f" option to lower the frequency that Vivado picks.
