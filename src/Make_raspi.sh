@@ -10,6 +10,9 @@
 # sudo apt-get update
 # sudo apt-get install libusb-1.0-0
 # sudo apt-get install libftdi1-dev
+#
+# NOTE: Once have the executables built and running, may need to use
+# the "-f" option to lower the frequency that Vivado picks.
 
 echo "make USE_GETIFADDRS=wlan0 USE_LIBFTDI1=true"
 make USE_GETIFADDRS=wlan0 USE_LIBFTDI1=true

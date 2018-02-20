@@ -88,22 +88,22 @@ int io_init(int vendor, int product, const char* serial, unsigned int index, uns
     }
 
     {
-	enum ftdi_interface selected_interface;
-	// Select interface - must be done before ftdi_usb_open
-	switch (interface) {
-	case 0: selected_interface = INTERFACE_A; break;
-	case 1: selected_interface = INTERFACE_B; break;
-	case 2: selected_interface = INTERFACE_C; break;
-	case 3: selected_interface = INTERFACE_D; break;
-	default: selected_interface = INTERFACE_ANY; break;
-	}
+        enum ftdi_interface selected_interface;
+        // Select interface - must be done before ftdi_usb_open
+        switch (interface) {
+        case 0: selected_interface = INTERFACE_A; break;
+        case 1: selected_interface = INTERFACE_B; break;
+        case 2: selected_interface = INTERFACE_C; break;
+        case 3: selected_interface = INTERFACE_D; break;
+        default: selected_interface = INTERFACE_ANY; break;
+        }
 
-	res = ftdi_set_interface(&ftdi, selected_interface);
-	if (res < 0) {
-	    fprintf(stderr, "ftdi_set_interface(%d): %d (%s)\n", interface, res, ftdi_get_error_string(&ftdi));
-	    ftdi_deinit(&ftdi);
-	    return 1;
-	}
+        res = ftdi_set_interface(&ftdi, selected_interface);
+        if (res < 0) {
+            fprintf(stderr, "ftdi_set_interface(%d): %d (%s)\n", interface, res, ftdi_get_error_string(&ftdi));
+            ftdi_deinit(&ftdi);
+            return 1;
+        }
     }
 
     if (serial != NULL) index = 0; /* ignore index if serial is given */
@@ -124,7 +124,7 @@ int io_init(int vendor, int product, const char* serial, unsigned int index, uns
     // USB devices, increase this number or comment it out completely.
     res = ftdi_set_latency_timer(&ftdi, (LATENCY_TIMER));
     if (res < 0) {
-	fprintf(stderr, "Unable to set latency timer: %d (%s).\n", res, ftdi_get_error_string(&ftdi));
+        fprintf(stderr, "Unable to set latency timer: %d (%s).\n", res, ftdi_get_error_string(&ftdi));
         io_close();
         return 1;
     }
