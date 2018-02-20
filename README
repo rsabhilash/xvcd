@@ -39,4 +39,25 @@ https://github.com/Xilinx/XilinxVirtualCable/blob/master/XAPP1251/src/xvcServer.
 so that Xilinx Virtual Cable is fully supported through both ISE and
 Vivado.
 
+CONFIGURATION:
+
+To try to determine the IP address where the executable is running in
+order to tell the user, the ethernet interface must be selected by
+defining USE_GETIFADDRS to it in xvcd.c. If do not want to use this
+feature, simply undefine USE_GETIFADDRS (ie. #undef USE_GETIFADDRS).
+
+May need to disable USE_ASYNC mode in io_ftdi.c (ie. #undef USE_ASYNC)
+to get it to build against old versions of libftdi.
+
+
+INSTALLATION:
+
+Need both libusb and libftdi libraries. Have had the most success
+building on a Raspberry Pi with the latest Raspbian image.
+
+sudo apt-get update
+sudo apt-get install libusb libftdi-devel
+make
+
+
 Have fun!
