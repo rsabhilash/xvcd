@@ -14,9 +14,6 @@
 # May need to also install libusb, but first let brew try to figure
 # that out. If it cannot, try: "brew install libusb"
 #
-# Note where libftdi is installed and update the LIBFTDI_BREW define
-# below. Likely only the version number changes, if anything.
-#
 # IMPORTANT! macOS has a built-in driver to FTDI or you may have
 # installed a FTDI driver at some point. Either of these, if loaded,
 # will grab the device before this executable can. To remedy this,
@@ -39,6 +36,5 @@
 # sudo kextload -bundle-id com.apple.driver.AppleUSBFTDI -bundle-id com.FTDI.driver.FTDIUSBSerialDriver
 #
 
-LIBFTDI_BREW=/usr/local/Cellar/libftdi/1.4
-echo "make C_INCLUDE_PATH=$LIBFTDI_BREW/include/libftdi1 USE_GETIFADDRS=en0 USE_LIBFTDI1=true"
-make C_INCLUDE_PATH=$LIBFTDI_BREW/include/libftdi1 USE_GETIFADDRS=en0 USE_LIBFTDI1=true
+echo "make USE_GETIFADDRS=en0 USE_LIBFTDI1=true"
+make USE_GETIFADDRS=en0 USE_LIBFTDI1=true
