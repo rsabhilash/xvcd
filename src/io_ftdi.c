@@ -1,5 +1,5 @@
 #include <stdio.h>
-#include <ftdi.h>
+#include <libftdi1/ftdi.h>
 #include <string.h>
 
 #include "io_ftdi.h"

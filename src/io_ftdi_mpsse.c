@@ -1,5 +1,5 @@
 #include <stdio.h>
-#include <ftdi.h>
+#include <libftdi1/ftdi.h>
 #include <string.h>
 
 #include "io_ftdi.h"
@@ -139,12 +139,15 @@ struct fifo_size io_get_fifo_sizes (struct ftdi_context *ftdi)
     case TYPE_2232H: fifo.tx = 4096; fifo.rx = 4096; break; // BCD Device: 0x0700  # TX: 4KiB, RX: 4KiB
     case TYPE_4232H: fifo.tx = 2048; fifo.rx = 2048; break; // BCD Device: 0x0800  # TX: 2KiB, RX: 2KiB
     case TYPE_232H:  fifo.tx = 1024; fifo.rx = 1024; break; // BCD Device: 0x0900  # TX: 1KiB, RX: 1KiB
-	// Newer Type which only shows up in newer version of
-	// libftdi. Leave out to minimize compilation problems on
-	// other systems. However, if using this type and the newer
-	// libftdi, feel free to uncomment it.
-	//
-	//case TYPE_230X: return {512, 512}; // BCD Device: 0x1000    # TX: 512, RX: 512
+
+#ifdef USE_LIBFTDI1	
+    // Newer Type which only shows up in newer version of
+    // libftdi1. Leave out if having compilation problems on other
+    // systems. Only really needed if using the type of device.
+    //
+    case TYPE_230X:  fifo.tx = 512; fifo.rx = 512; break;   // BCD Device: 0x1000    # TX: 512, RX: 512
+#endif
+	
     default: fifo.tx = 128; fifo.rx = 128; break;  //  # default sizes
     }
 
@@ -634,11 +637,15 @@ int io_init(int vendor, int product, const char* serial, unsigned int index, uns
 	case TYPE_2232H: printf("2232H"); break;
 	case TYPE_4232H: printf("4232H"); break;
 	case TYPE_232H: printf("232H"); break;
-	    // Newer Type which only shows up in newer version of
-	    // libftdi. Leave out to minimize compilation problems on
-	    // other systems.
-	    //
-	    //case TYPE_230X: printf("230X"); break;
+
+#ifdef USE_LIBFTDI1	
+        // Newer Type which only shows up in newer version of
+        // libftdi1. Leave out if having compilation problems on other
+        // systems. Only really needed if using the type of device.
+        //
+	case TYPE_230X: printf("230X"); break;
+#endif
+
 	default: printf("!UNKNOWN!"); break;
 	}
 	printf("\n\n");

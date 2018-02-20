@@ -11,6 +11,5 @@
 # sudo apt-get install libusb-1.0-0
 # sudo apt-get install libftdi1-dev
 
-LIBFTDI_BREW=/usr/local/Cellar/libftdi/1.4
-echo "make C_INCLUDE_PATH=$LIBFTDI_BREW/include/libftdi1 USE_GETIFADDRS=wlan0 USE_LIBFTDI1=true"
-make C_INCLUDE_PATH=$LIBFTDI_BREW/include/libftdi1 USE_GETIFADDRS=wlan0 USE_LIBFTDI1=true
+echo "make USE_GETIFADDRS=wlan0 USE_LIBFTDI1=true"
+make USE_GETIFADDRS=wlan0 USE_LIBFTDI1=true
