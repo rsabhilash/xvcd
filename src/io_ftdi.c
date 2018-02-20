@@ -15,8 +15,17 @@
 
 #define IO_DEFAULT_OUT     (0xe0)               /* Found to work best for some FTDI implementations */
 
-#define USE_ASYNC
-#undef  USE_LIBFTDI1
+// NOTE: Moved definitions to Makefile to make it easier to
+// build for different platforms.
+//#define  USE_ASYNC
+//#define  USE_LIBFTDI1
+
+// Set the USB Latency Time to 4 ms, which seems to work well for
+// Raspberry Pi and Mac. However, can be overridden through Makefile,
+// if desired.
+#ifndef LATENCY_TIMER
+#define LATENCY_TIMER 4
+#endif
 
 #ifndef USE_ASYNC
 #define FTDI_MAX_WRITESIZE 256
@@ -113,7 +122,7 @@ int io_init(int vendor, int product, const char* serial, unsigned int index, uns
     // setting. However, it might impact how well the host system
     // works, so use with care. If find the host fails to handle other
     // USB devices, increase this number or comment it out completely.
-    res = ftdi_set_latency_timer(&ftdi, 4);
+    res = ftdi_set_latency_timer(&ftdi, (LATENCY_TIMER));
     if (res < 0) {
 	fprintf(stderr, "Unable to set latency timer: %d (%s).\n", res, ftdi_get_error_string(&ftdi));
         io_close();
@@ -194,7 +203,6 @@ int io_scan(const unsigned char *TMS, const unsigned char *TDI, unsigned char *T
     unsigned char buffer[2*16384];
     int i, res;
 #ifndef USE_ASYNC
-#error no async
     int r, t;
 #else
 #ifdef USE_LIBFTDI1
@@ -231,7 +239,7 @@ int io_scan(const unsigned char *TMS, const unsigned char *TDI, unsigned char *T
         if (t > FTDI_MAX_WRITESIZE)
             t = FTDI_MAX_WRITESIZE;
 
-        printf("writing %d bytes\n", t);
+        if (vlevel > 2) printf("writing %d bytes\n", t);
         res = ftdi_write_data(&ftdi, buffer + r, t);
 
         if (res != t)

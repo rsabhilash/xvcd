@@ -17,7 +17,10 @@
 // the server for output to user. Not all platforms support this
 // function, so simply undef USE_GETIFADDRS if your platform cannot
 // find this function.
-#define USE_GETIFADDRS "wlan0"
+//
+// NOTE: Moved definition of this to Makefile to make it easier to
+// build for different platforms.
+//#define USE_GETIFADDRS "en0"
 
 #define STRINGIFY(x) #x
 #define TOSTRING(x) STRINGIFY(x)
@@ -143,7 +146,7 @@ long int getInternalAddress(char* interface, sa_family_t ipVersion)
 
 char *getHostIP(void)
 {
-    static char *hostMsg = "IP_Address";
+    static char *hostMsg = "XVCD_IP_Address";
     char *host = hostMsg;
 
 #ifdef USE_GETIFADDRS

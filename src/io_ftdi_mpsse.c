@@ -204,7 +204,7 @@ int io_transfer_mpsse(unsigned char *cmdp, int cmdBytes, int rxBytes, unsigned c
     // Make sure do not blow the rxbuf buffer - should be sized to
     // avoid this but notify in case that is not the case.
     if (rxBytes > sizeof(rxbuf)) {
-	fprintf(stderr, "io_transfer_mpsse(): Number of read bytes (%d) exceeds read buffer size (%d)! Aborting transfer!\n", rxBytes, sizeof(rxbuf));
+	fprintf(stderr, "io_transfer_mpsse(): Number of read bytes (%d) exceeds read buffer size (%d)! Aborting transfer!\n", rxBytes, (int)sizeof(rxbuf));
 	return -1;
     }
 
@@ -906,7 +906,7 @@ int io_scan(const unsigned char *TMS, const unsigned char *TDI, unsigned char *T
 
     // check that did not over blow TDO array
     if ((TDO - TDOstart) > numTDOBytes) {
-	fprintf(stderr, "io_scan(): wrote too many bytes into TDO! Exp.: %d  Act. %d\n", numTDOBytes, (TDO - TDOstart));
+	fprintf(stderr, "io_scan(): wrote too many bytes into TDO! Exp.: %d  Act. %d\n", numTDOBytes, (int)(TDO - TDOstart));
     }
 
     return 0;
