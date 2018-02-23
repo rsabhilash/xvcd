@@ -85,28 +85,28 @@ static int jtag_step(int state, int tms)
 
 int32_t getInt32(unsigned char *data)
 {
-    // Return an int32_t from the received byte string, data. data is
-    // expected to be 4 bytes long.
-    int32_t num;
+	// Return an int32_t from the received byte string, data. data is
+	// expected to be 4 bytes long.
+	int32_t num;
 
-    // The int32 in data is sent little endian
-    num = data[3];
-    num = (num << 8) | data[2];
-    num = (num << 8) | data[1];
-    num = (num << 8) | data[0];
+	// The int32 in data is sent little endian
+	num = data[3];
+	num = (num << 8) | data[2];
+	num = (num << 8) | data[1];
+	num = (num << 8) | data[0];
 
-    return num;
+	return num;
 }
 
 void putInt32(unsigned char *data, int32_t num)
 {
-    // Convert the int32_t number, num, into a 4-byte, little endian
-    // string pointed to by data
+	// Convert the int32_t number, num, into a 4-byte, little endian
+	// string pointed to by data
 
-    data[0] = num & 0x00ff; num >>= 8;
-    data[1] = num & 0x00ff; num >>= 8;
-    data[2] = num & 0x00ff; num >>= 8;
-    data[3] = num & 0x00ff; num >>= 8;
+	data[0] = num & 0x00ff; num >>= 8;
+	data[1] = num & 0x00ff; num >>= 8;
+	data[2] = num & 0x00ff; num >>= 8;
+	data[3] = num & 0x00ff; num >>= 8;
 
 }
 
@@ -389,14 +389,14 @@ int main(int argc, char **argv)
 	int s;
 	int c;
 	int port = 2542;
-    int product = -1, vendor = -1, index = 0, interface = 0;
+	int product = -1, vendor = -1, index = 0, interface = 0;
 	unsigned long frequency = 0;
-    char * serial = NULL;
+	char * serial = NULL;
 	struct sockaddr_in address;
 	
 	opterr = 0;
 	
-    while ((c = getopt(argc, argv, "vV:P:S:I:i:p:f:")) != -1)
+	while ((c = getopt(argc, argv, "vV:P:S:I:i:p:f:")) != -1)
 		switch (c)
 		{
 		case 'p':
@@ -408,15 +408,15 @@ int main(int argc, char **argv)
 		case 'P':
 			product = strtoul(optarg, NULL, 0);
 			break;
-        case 'S':
-            serial = optarg;
-            break;
-        case 'I':
-            index = strtoul(optarg, NULL, 0);
-            break;
-        case 'i':
-            interface = strtoul(optarg, NULL, 0);
-            break;
+		case 'S':
+			serial = optarg;
+			break;
+		case 'I':
+			index = strtoul(optarg, NULL, 0);
+			break;
+		case 'i':
+			interface = strtoul(optarg, NULL, 0);
+			break;
 		case 'v':
 			vlevel++;
 			//printf ("verbosity level is %d\n", vlevel);
@@ -425,15 +425,15 @@ int main(int argc, char **argv)
 			frequency = strtoul(optarg, NULL, 0);
 			break;
 		case '?':
-            fprintf(stderr, "usage: %s [-v] [-V vendor] [-P product] [-S serial] [-I index] [-i interface] [-f frequency] [-p port]\n\n", *argv);
+			fprintf(stderr, "usage: %s [-v] [-V vendor] [-P product] [-S serial] [-I index] [-i interface] [-f frequency] [-p port]\n\n", *argv);
 			fprintf(stderr, "          -v: verbosity, increase verbosity by adding more v's\n");
 			fprintf(stderr, "          -V: vendor ID, use to select the desired FTDI device if multiple on host. (default = 0x0403)\n");
 			fprintf(stderr, "          -P: product ID, use to select the desired FTDI device if multiple on host. (default = 0x6010)\n");
-            fprintf(stderr, "          -S: serial number, use to select the desired FTDI device if multiple devices with same vendor\n");
-            fprintf(stderr, "              and product IDs on host. \'lsusb -v\' can be used to find the serial numbers.\n");
-            fprintf(stderr, "          -I: USB index, use to select the desired FTDI device if multiple devices with same vendor\n");
-            fprintf(stderr, "              and product IDs on host. Can be used instead of -S but -S is more definitive. (default = 0)\n");
-            fprintf(stderr, "          -i: interface, select which \'port\' on the selected device to use if multiple port device. (default = 0)\n");
+			fprintf(stderr, "          -S: serial number, use to select the desired FTDI device if multiple devices with same vendor\n");
+			fprintf(stderr, "              and product IDs on host. \'lsusb -v\' can be used to find the serial numbers.\n");
+			fprintf(stderr, "          -I: USB index, use to select the desired FTDI device if multiple devices with same vendor\n");
+			fprintf(stderr, "              and product IDs on host. Can be used instead of -S but -S is more definitive. (default = 0)\n");
+			fprintf(stderr, "          -i: interface, select which \'port\' on the selected device to use if multiple port device. (default = 0)\n");
 			fprintf(stderr, "          -f: frequency in Hz, force TCK frequency. If set to 0, set from settck commands sent by client. (default = 0)\n");
 			fprintf(stderr, "          -p: TCP port, TCP port to listen for connections from client (default = %d)\n\n", port);
 			return 1;
@@ -457,7 +457,7 @@ int main(int argc, char **argv)
         printf("You should be able to use the relevant tool normally.\n\n");
     }
 
-    if (io_init(vendor, product, serial, index, interface, frequency, vlevel))
+	if (io_init(vendor, product, serial, index, interface, frequency, vlevel))
 	{
 		fprintf(stderr, "io_init failed\n");
 		return 1;
@@ -541,26 +541,26 @@ int main(int argc, char **argv)
 						perror("accept");
 					} else
 					{
-					    if (vlevel > 0) printf("setting TCP_NODELAY to 1\n");
-					    int flag = 1;
-					    int optResult = setsockopt(newfd,
-								       IPPROTO_TCP,
-								       TCP_NODELAY,
-								       (char *)&flag,
-								       sizeof(int));
-					    if (optResult < 0)
-						perror("TCP_NODELAY error");
-					    if (newfd > maxfd)
-					    {
-						maxfd = newfd;
-					    }
-					    FD_SET(newfd, &conn);
+						if (vlevel > 0) printf("setting TCP_NODELAY to 1\n");
+						int flag = 1;
+						int optResult = setsockopt(newfd,
+									   IPPROTO_TCP,
+									   TCP_NODELAY,
+									   (char *)&flag,
+									   sizeof(int));
+						if (optResult < 0)
+							perror("TCP_NODELAY error");
+						if (newfd > maxfd)
+						{
+							maxfd = newfd;
+						}
+						FD_SET(newfd, &conn);
 					}
 				}
 				//
 				// Otherwise, do work.
 				//
-                else if (handle_data(fd, frequency))
+				else if (handle_data(fd, frequency))
 				{
 					//
 					// Close connection when required.
