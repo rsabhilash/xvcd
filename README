@@ -1,3 +1,10 @@
+
+If you are looking for XVCD support with a FTDI device, you have come
+to the right place. However, you need to switch to the 'ftdi'
+branch. That is where all of my personal contributions are.
+
+
+[From original fork (tmbinc/xvcd)]:
 This is a daemon that listens to "xilinx_xvc" (xilinx virtual cable) traffic and 
 operates JTAG over GPIOs.
 
