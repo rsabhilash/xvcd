@@ -1,10 +1,10 @@
  Use these instructions for building on a Linux PC, specifically
  SLC6. Tested with Linux Kernel 2.6.32 x86_64.
 
- Need libusb and libftdi installed. If like my test system, yum did
- not have a recent enough libusb for access to the FTDI to work
- properly. Need at least libusb-1.0. So I had to install libusb
- myself:
+ Need libusb and libftdi installed. On my SLC6 system, yum did not
+ have a recent enough libusb for access to the FTDI to work
+ properly. The minimum version is libusb-1.0. So I had to install
+ libusb myself:
 
  Can download from: http://libusb.info/ or
    git clone https://github.com/libusb/libusb
@@ -54,6 +54,14 @@
  existing udev rules for Xilinx and Digilent devices with the same
  vendor ID of 0x0403. Then unplug and plug the FTDI device in to have
  udev use this new rule.
+
+ To build xvcd for SLC6, simply do:
+
+ make slc6
+
+ The executables are in the src/ folder. xvcdbb uses bit-bang mode,
+ which is likely slightly slower but can be used on FTDI GPIO. xvcdmp
+ uses a MPSSE within the FTDI device.
 
  NOTE: Once have the executables built and running, may need to use
  the "-f" option to lower the frequency that Vivado picks.

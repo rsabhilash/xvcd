@@ -18,5 +18,13 @@
  http://eblot.github.io/pyftdi/installation.html. Then unplug and
  plug the FTDI device in to have udev use this new rule.
 
+ To build xvcd for a Raspberry Pi running Rasbian, simply do:
+
+ make raspi
+
+ The executables are in the src/ folder. xvcdbb uses bit-bang mode,
+ which is likely slightly slower but can be used on FTDI GPIO. xvcdmp
+ uses a MPSSE within the FTDI device.
+
  NOTE: Once have the executables built and running, may need to use
  the "-f" option to lower the frequency that Vivado picks.

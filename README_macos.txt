@@ -33,3 +33,14 @@
  command to fit your case.
 
  sudo kextload -bundle-id com.apple.driver.AppleUSBFTDI -bundle-id com.FTDI.driver.FTDIUSBSerialDriver
+
+ To build xvcd for macOS, simply do:
+
+ make macos
+
+ The executables are in the src/ folder. xvcdbb uses bit-bang mode,
+ which is likely slightly slower but can be used on FTDI GPIO. xvcdmp
+ uses a MPSSE within the FTDI device.
+
+ NOTE: Once have the executables built and running, may need to use
+ the "-f" option to lower the frequency that Vivado picks.
