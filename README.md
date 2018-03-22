@@ -1,5 +1,8 @@
-This is a daemon that listens to "xilinx_xvc" (xilinx virtual cable) traffic and 
-operates JTAG over an FTDI in either bitbang mode or in MPSSE mode.
+# xvcd
+
+This is a daemon that listens to "xilinx_xvc" (xilinx virtual cable)
+traffic and operates JTAG over an FTDI in either bitbang mode or in
+MPSSE mode.
 
 The bitbang mode is the original code with slight modifications with
 changes to the arguments of the interface functions. After building,
@@ -40,7 +43,7 @@ https://github.com/Xilinx/XilinxVirtualCable/blob/master/XAPP1251/src/xvcServer.
 so that Xilinx Virtual Cable is fully supported through both ISE and
 Vivado.
 
-CONFIGURATION:
+## Configuration
 
 To try to determine the IP address where the executable is running in
 order to tell the user, the ethernet interface must be selected by
@@ -49,10 +52,10 @@ through a make variable (ie. make USE_GETIFADDRS=wlan0). If do not
 define it, then the code is skipped.
 
 
-INSTALLATION:
+## Installation
 
-Need both libusb and libftdi libraries. See individual Make_xxx.sh
-shell script files with extensive comments on how to install/build
-libusb and libftdi for this build.
+Need both libusb and libftdi1 libraries. See individual README_xxx.txt
+files with extensive comments on how to install/build libusb and
+libftdi for this build.
 
-Have fun!
+*Have fun!*
