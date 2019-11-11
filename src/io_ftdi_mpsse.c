@@ -47,10 +47,23 @@
 #define PORT_TDI            0x02
 #define PORT_TDO            0x04
 #define PORT_TMS            0x08
-#define PORT_MISC           0x90
+#define PORT_MISC           0xf0
+
+// FTDI Pin Layout
+//
+// +--------+-------+-------+-------+-------+-------+-------+-------+
+// | DBUS7  | DBUS6 | DBUS5 | DBUS4 | DBUS3 | DBUS2 | DBUS1 | DBUS0 |
+// +--------+-------+-------+-------+-------+-------+-------+-------+
+// | PROG_B | OE_N  |  NC   |  NC   |  TMS  |  TDO  |  TDI  |  TCK  |
+// +--------+-------+-------+-------+-------+-------+-------+-------+
+//
+// OE_N is JTAG buffer output enable signal (active-low)
+// PROG_B is not used, so left as input to FTDI.
+
+
 #define IO_OUTPUT (PORT_MISC|PORT_TCK|PORT_TDI|PORT_TMS)
 
-#define IO_DEFAULT_OUT     (0xe0)               /* Found to work best for some FTDI implementations */
+#define IO_DEFAULT_OUT     (0x00)               /* Changed for Numato Mimas A7 */
 
 // MPSSE Command Bytes (taken from pyftdi)
 #define WRITE_BYTES_PVE_MSB  (0x10)
